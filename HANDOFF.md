@@ -23,7 +23,7 @@ A single-page website that reads the crowdsourced dermatology research-fellowshi
 
 ## Changing the tool
 
-Everything is in `src/` (engine.js holds the rules, app.js the interface, style.css, template.html). Run `node build.js` to regenerate `public/index.html`, which is the page Render serves. `test/` holds browser and parity tests (Playwright for the Python ones). If you use an AI assistant to make changes, give it this file, README.md and the `src` folder, and tell it: keep it a single static page with no server, never filter on missing data, and keep statuses and notes stored by program ID in localStorage.
+Everything is in `src/` (engine.js holds the rules, app.js the interface, style.css, template.html). Run `node build.js` to regenerate `public/index.html`, which is the page Render serves. There are no automated tests yet. If you use an AI assistant to make changes, give it this file, README.md and the `src` folder, and tell it: keep it a single static page with no server, never filter on missing data, and keep statuses and notes stored by program ID in localStorage.
 
 ## Instruction files
 
@@ -32,4 +32,3 @@ Everything is in `src/` (engine.js holds the rules, app.js the interface, style.
 ## Deploying on Render
 
 Create a Static Site from the GitHub repo, set the publish directory to `public`, and leave the build command blank (render.yaml has these settings).
-x

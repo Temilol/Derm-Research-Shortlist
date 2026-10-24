@@ -35,5 +35,4 @@ without it.
 ## For editing the code
 
 `src/` holds the page source (engine.js is the filtering logic, app.js the interface, style.css the look).
-`node build.js` assembles `public/index.html`. `test/compare.js` checks the JavaScript engine against the
-original Python script's results.
+`node build.js` assembles `public/index.html`.
