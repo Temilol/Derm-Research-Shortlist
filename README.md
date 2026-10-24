@@ -4,21 +4,6 @@ A single static web page. You upload the crowdsourced dermatology research-fello
 (.xlsx or .csv), and it filters it against your profile, sorts by deadline urgency, and lets you sort and
 filter every column. All processing happens in your browser. Nothing is uploaded to a server.
 
-## Put it on Render (one time, about ten minutes)
-
-1. Create a new **public or private** repository on GitHub (for example `derm-research-shortlist`).
-2. Upload everything in this folder to it (GitHub: **Add file → Upload files**, drag the folder contents in, **Commit**).
-3. In Render, choose **New + → Static Site** and connect that repository.
-4. Set **Build Command** to nothing (leave it blank) and **Publish Directory** to `public`.
-5. Click **Create Static Site**. Render gives you an address ending in `.onrender.com`.
-
-(`render.yaml` describes the same settings if you prefer **New + → Blueprint**.)
-
-## Updating the page later
-
-Replace `public/index.html` in the repository (GitHub: open the file, **pencil icon**, or **Upload files**
-over it). Render redeploys by itself in a minute or two.
-
 ## Every week
 
 Open the site, drag the newly downloaded spreadsheet onto the page (Google Sheets: **File → Download →
@@ -32,7 +17,8 @@ stored in this browser only. Use **Backup & restore** to save them to a file or 
 device. The page loads the SheetJS library from cdnjs.cloudflare.com to read .xlsx files; CSV uploads work
 without it.
 
-## For editing the code
+## Changing the page
 
 `src/` holds the page source (engine.js is the filtering logic, app.js the interface, style.css the look).
-`node build.js` assembles `public/index.html`.
+Push changes to `main`; Render runs `node build.js` to rebuild `public/index.html` and redeploys in a
+minute or two. Don't edit `public/index.html` directly; the build overwrites it.

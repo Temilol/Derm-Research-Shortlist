@@ -3,4 +3,5 @@ services:
   - type: web
     name: derm-research-shortlist
     runtime: static
+    buildCommand: node build.js
     staticPublishPath: ./public
