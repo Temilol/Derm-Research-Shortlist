@@ -31,4 +31,4 @@ Everything is in `src/` (engine.js holds the rules, app.js the interface, style.
 
 ## Deploying on Render
 
-Create a Static Site from the GitHub repo, set the build command to `node build.js` and the publish directory to `public` (render.yaml has these settings). Render rebuilds `public/index.html` from `src/` on every push.
+The live site is https://derm-research-shortlist.onrender.com. To recreate it, create a Static Site from the GitHub repo, set the build command to `node build.js` and the publish directory to `public` (render.yaml has these settings). Render rebuilds `public/index.html` from `src/` on every push.
