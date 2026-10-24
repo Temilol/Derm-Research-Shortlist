@@ -5,12 +5,17 @@
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
   // ---------------------------------------------------------------- storage (never required for the page to work)
+  // mem holds this session's writes, so reads stay current even when a write to localStorage failed.
   const mem = {};
   const store = {
-    get(k) { try { const v = localStorage.getItem(k); if (v !== null) return v; } catch (e) { /* blocked */ } return k in mem ? mem[k] : null; },
-    set(k, v) { mem[k] = v; try { localStorage.setItem(k, v); } catch (e) { /* blocked */ } },
+    get(k) { if (k in mem) return mem[k]; try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) {
+      mem[k] = v;
+      try { localStorage.setItem(k, v); saveOk(k); return true; } catch (e) { saveFailed(k, e); return false; }
+    },
+    remove(k) { delete mem[k]; try { localStorage.removeItem(k); } catch (e) { /* blocked */ } },
     getJSON(k) { try { const v = this.get(k); return v ? JSON.parse(v) : null; } catch (e) { return null; } },
-    setJSON(k, v) { this.set(k, JSON.stringify(v)); },
+    setJSON(k, v) { return this.set(k, JSON.stringify(v)); },
   };
   const K = { profile: "drs.profile.v1", tracker: "drs.tracker.v1", dataset: "drs.dataset.v1", snapshot: "drs.snapshot.v1", cols: "drs.cols.v1" };
 
@@ -125,6 +130,28 @@
     if (!msg) { n.hidden = true; return; }
     n.className = "notice " + (kind || "info"); n.textContent = msg; n.hidden = false;
   }
+  // A failed save keeps a warning up until every failed key saves again or the user dismisses it.
+  const saveFail = { keys: new Set(), since: null, kind: "", dismissed: false };
+  function saveFailed(k, e) {
+    const full = !!e && (e.name === "QuotaExceededError" || e.name === "NS_ERROR_DOM_QUOTA_REACHED" || e.code === 22);
+    if (!saveFail.keys.size) { saveFail.since = new Date(); saveFail.dismissed = false; }
+    saveFail.keys.add(k); saveFail.kind = full ? "full" : "blocked";
+    renderSaveBar();
+  }
+  function saveOk(k) { if (saveFail.keys.delete(k)) renderSaveBar(); }
+  function renderSaveBar() {
+    const bar = $("#saveBar");
+    if (!bar) return;
+    const keys = saveFail.keys;
+    if (!keys.size || saveFail.dismissed) { bar.hidden = true; return; }
+    const time = saveFail.since.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    let msg;
+    if (saveFail.kind === "blocked") msg = "This browser isn’t allowing the page to save, which can happen in private browsing. Your changes will be lost when you close this tab. Download a backup before you leave.";
+    else if (keys.size === 1 && keys.has(K.dataset)) msg = "Your browser’s storage is full, so the spreadsheet you loaded isn’t saved. Your statuses and notes are saved; after a reload, upload the file again.";
+    else msg = `Your browser’s storage is full, so changes since ${time} aren’t saved. Download a backup now so you don’t lose them.`;
+    $("#saveText").textContent = msg;
+    bar.hidden = false;
+  }
   function copyText(text, okMsg, fallbackEl) {
     const fail = () => { if (fallbackEl) { fallbackEl.focus(); fallbackEl.select(); } toast("Copy was blocked. The text is selected; press Ctrl/Cmd+C."); };
     try {
@@ -173,6 +200,8 @@
     const sheets = { [ds.sheetName]: ds.rows };
     const prepared = E.prepareRows(sheets, ds.sheetName);
     S.dataset = ds; S.sheets = sheets; S.prepared = prepared;
+    // Save the file before the snapshot: a stale saved file next to a newer snapshot would make What changed run backwards after a reload.
+    if (opts.persist) persistDataset(ds);
     const hash = E.fnv(JSON.stringify(ds.rows));
     const cur = E.snapshot(prepared.rows);
     const prev = store.getJSON(K.snapshot);
@@ -186,9 +215,10 @@
       S.changes = changes; S.changesMeta = { baseline: false, runDate: ds.loadedAt, prevRunDate: prev.runDate };
       store.setJSON(K.snapshot, { hash, runDate: ds.loadedAt, programs: cur, changes, prevRunDate: prev.runDate });
     }
-    if (opts.persist) store.setJSON(K.dataset, ds);
     recompute();
   }
+  // If the file does not fit, drop the old saved copy so it cannot be reopened as current, and so the small tracker still has room.
+  function persistDataset(ds) { if (!store.setJSON(K.dataset, ds)) store.remove(K.dataset); }
 
   // Your Needs-verification decisions sit on top of the rule engine: the engine's answer is kept (origBucket/origWhy) and r.group is where the row shows.
   function applyDecisions() {
@@ -644,6 +674,7 @@
   function backupPayload() {
     return JSON.stringify({ app: "derm-research-shortlist", version: 1, savedAt: new Date().toISOString(), profile: S.profile, tracker: S.tracker, snapshot: store.getJSON(K.snapshot), dataset: S.dataset || null });
   }
+  function downloadBackup() { saveFile(`derm-research-shortlist-backup-${E.iso(todayUTC())}.json`, backupPayload(), "application/json"); }
   function openBackup() {
     const n = Object.values(S.tracker).filter((t) => t.status || t.notes || t.decision).length;
     openModal("Backup & restore", `<p class="hint" style="margin:0">Your profile settings, application tracker (${n} program${n === 1 ? "" : "s"} with a status, note or decision), last loaded file and change history live only in this browser. Back them up before clearing browser data or switching devices.</p>
@@ -652,7 +683,7 @@
       <div class="sec"><strong>Restore</strong><input type="file" id="bkFile" accept=".json,application/json" aria-label="Backup file"><textarea id="bkPaste" placeholder="Or paste backup text here" aria-label="Paste backup text"></textarea><div class="row-actions" style="margin:0"><button class="btn" id="bkRestore" type="button">Restore from backup</button></div></div>`);
     const payload = backupPayload();
     $("#bkText").value = payload;
-    $("#bkDl").onclick = () => saveFile(`derm-research-shortlist-backup-${E.iso(todayUTC())}.json`, payload, "application/json");
+    $("#bkDl").onclick = downloadBackup;
     $("#bkCopy").onclick = () => copyText(payload, "Backup copied", $("#bkText"));
     $("#clrBtn").onclick = () => {
       const b = $("#clrBtn");
@@ -668,7 +699,7 @@
         if (d.profile) { S.profile = Object.assign({}, E.DEFAULT_PROFILE, d.profile); store.setJSON(K.profile, S.profile); }
         if (d.tracker) { S.tracker = d.tracker; migrateTracker(S.tracker); store.setJSON(K.tracker, S.tracker); }
         if (d.snapshot) store.setJSON(K.snapshot, d.snapshot);
-        if (d.dataset) { store.setJSON(K.dataset, d.dataset); setDataset(d.dataset, { persist: false }); } else if (S.dataset) recompute();
+        if (d.dataset) setDataset(d.dataset, { persist: true }); else if (S.dataset) recompute();
         renderSettings(); closeModal(); toast("Backup restored");
       } catch (e) { toast("Could not restore: " + e.message); }
     };
@@ -687,6 +718,8 @@
     $("#closeSettings").onclick = () => { $("#settingsPanel").hidden = true; $("#settingsBtn").setAttribute("aria-expanded", "false"); };
     $("#resetProfile").onclick = () => { S.profile = Object.assign({}, E.DEFAULT_PROFILE, { east_coast_states: E.EAST.slice() }); S.asOf = ""; renderSettings(); saveProfile(); toast("Profile reset"); };
     $("#backupBtn").onclick = openBackup;
+    $("#saveBackup").onclick = downloadBackup;
+    $("#saveDismiss").onclick = () => { saveFail.dismissed = true; renderSaveBar(); };
     $("#mClose").onclick = closeModal;
     $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeModal(); $("#colsPop").hidden = true; } });

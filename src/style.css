@@ -238,6 +238,8 @@ tr.detail td { padding: 0; background: var(--surface-2); }
 .pill.moved { background: var(--accent-soft); color: var(--ink); border: 1px solid var(--accent); }
 .pill.warn { background: color-mix(in srgb, var(--t2) 18%, var(--surface)); border: 1px solid var(--t2); color: var(--ink); }
 .orphan-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.save-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.save-actions { display: flex; gap: 8px; margin-left: auto; }
 .orphan-item { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-top: 1px solid var(--line-2); }
 .orphan-item .meta { color: var(--ink-3); font-size: 12px; }
 .orphan-item .acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
