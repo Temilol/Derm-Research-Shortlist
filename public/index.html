@@ -1136,7 +1136,7 @@ tr.detail td { padding: 0; background: var(--surface-2); }
     getJSON(k) { try { const v = this.get(k); return v ? JSON.parse(v) : null; } catch (e) { return null; } },
     setJSON(k, v) { this.set(k, JSON.stringify(v)); },
   };
-  const K = { profile: "fdf.profile.v1", tracker: "fdf.tracker.v1", dataset: "fdf.dataset.v1", snapshot: "fdf.snapshot.v1", cols: "fdf.cols.v1" };
+  const K = { profile: "drs.profile.v1", tracker: "drs.tracker.v1", dataset: "drs.dataset.v1", snapshot: "drs.snapshot.v1", cols: "drs.cols.v1" };
 
   // ---------------------------------------------------------------- constants
   const TIER_SHORT = { 1: "Due ≤ 30 days", 2: "Due 31–90 days", 3: "Due later", 4: "Rolling", 5: "Passed · projected", 6: "No date" };
@@ -1766,8 +1766,7 @@ tr.detail td { padding: 0; background: var(--surface-2); }
   }
 
   function backupPayload() {
-    // "derm-fellowship-finder" is the old project name; keep it so existing backups still restore.
-    return JSON.stringify({ app: "derm-fellowship-finder", version: 1, savedAt: new Date().toISOString(), profile: S.profile, tracker: S.tracker, snapshot: store.getJSON(K.snapshot), dataset: S.dataset || null });
+    return JSON.stringify({ app: "derm-research-shortlist", version: 1, savedAt: new Date().toISOString(), profile: S.profile, tracker: S.tracker, snapshot: store.getJSON(K.snapshot), dataset: S.dataset || null });
   }
   function openBackup() {
     const n = Object.values(S.tracker).filter((t) => t.status || t.notes || t.decision).length;
@@ -1789,7 +1788,7 @@ tr.detail td { padding: 0; background: var(--surface-2); }
     const doRestore = (text) => {
       try {
         const d = JSON.parse(text);
-        if (d.app !== "derm-fellowship-finder") throw new Error("This is not a backup from this tool.");
+        if (d.app !== "derm-research-shortlist") throw new Error("This is not a backup from this tool.");
         if (d.profile) { S.profile = Object.assign({}, E.DEFAULT_PROFILE, d.profile); store.setJSON(K.profile, S.profile); }
         if (d.tracker) { S.tracker = d.tracker; migrateTracker(S.tracker); store.setJSON(K.tracker, S.tracker); }
         if (d.snapshot) store.setJSON(K.snapshot, d.snapshot);
@@ -1938,7 +1937,7 @@ tr.detail td { padding: 0; background: var(--surface-2); }
       try { setDataset(ds, { persist: false }); } catch (e) { notice("Could not open the saved file: " + e.message, "err"); renderAll(); }
     } else renderAll();
   }
-  window.__fdf = { S, E, handleFile, setDataset };
+  window.__drs ={ S, E, handleFile, setDataset };
   start();
 })();
 

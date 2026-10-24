@@ -1,6 +1,6 @@
 # Optional Render Blueprint. The manual steps in README.md work the same way.
 services:
   - type: web
-    name: derm-fellowship-finder  # old project name; renaming here can create a new Render service and URL
+    name: derm-research-shortlist
     runtime: static
     staticPublishPath: ./public
