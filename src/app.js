@@ -642,6 +642,7 @@
   }
 
   function backupPayload() {
+    // "derm-fellowship-finder" is the old project name; keep it so existing backups still restore.
     return JSON.stringify({ app: "derm-fellowship-finder", version: 1, savedAt: new Date().toISOString(), profile: S.profile, tracker: S.tracker, snapshot: store.getJSON(K.snapshot), dataset: S.dataset || null });
   }
   function openBackup() {
@@ -652,7 +653,7 @@
       <div class="sec"><strong>Restore</strong><input type="file" id="bkFile" accept=".json,application/json" aria-label="Backup file"><textarea id="bkPaste" placeholder="Or paste backup text here" aria-label="Paste backup text"></textarea><div class="row-actions" style="margin:0"><button class="btn" id="bkRestore" type="button">Restore from backup</button></div></div>`);
     const payload = backupPayload();
     $("#bkText").value = payload;
-    $("#bkDl").onclick = () => saveFile(`fellowship-finder-backup-${E.iso(todayUTC())}.json`, payload, "application/json");
+    $("#bkDl").onclick = () => saveFile(`derm-research-shortlist-backup-${E.iso(todayUTC())}.json`, payload, "application/json");
     $("#bkCopy").onclick = () => copyText(payload, "Backup copied", $("#bkText"));
     $("#clrBtn").onclick = () => {
       const b = $("#clrBtn");

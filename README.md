@@ -1,4 +1,4 @@
-# Derm Fellowship Finder
+# Derm Research Shortlist
 
 A single static web page. You upload the crowdsourced dermatology research-fellowship spreadsheet
 (.xlsx or .csv), and it filters it against your profile, sorts by deadline urgency, and lets you sort and
@@ -6,7 +6,7 @@ filter every column. All processing happens in your browser. Nothing is uploaded
 
 ## Put it on Render (one time, about ten minutes)
 
-1. Create a new **public or private** repository on GitHub (for example `derm-fellowship-finder`).
+1. Create a new **public or private** repository on GitHub (for example `derm-research-shortlist`).
 2. Upload everything in this folder to it (GitHub: **Add file → Upload files**, drag the folder contents in, **Commit**).
 3. In Render, choose **New + → Static Site** and connect that repository.
 4. Set **Build Command** to nothing (leave it blank) and **Publish Directory** to `public`.

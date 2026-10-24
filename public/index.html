@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <style>body{margin:0}[hidden]{display:none!important}</style>
-<title>Derm Fellowship Finder</title>
+<title>Derm Research Shortlist</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -285,7 +285,7 @@ tr.detail td { padding: 0; background: var(--surface-2); }
 <div class="app" id="app">
   <header class="top">
     <div class="brand">
-      <h1>Derm Fellowship Finder</h1>
+      <h1>Derm Research Shortlist</h1>
       <p class="sub" id="sourceLine">Loading…</p>
     </div>
     <div class="actions">
@@ -1766,6 +1766,7 @@ tr.detail td { padding: 0; background: var(--surface-2); }
   }
 
   function backupPayload() {
+    // "derm-fellowship-finder" is the old project name; keep it so existing backups still restore.
     return JSON.stringify({ app: "derm-fellowship-finder", version: 1, savedAt: new Date().toISOString(), profile: S.profile, tracker: S.tracker, snapshot: store.getJSON(K.snapshot), dataset: S.dataset || null });
   }
   function openBackup() {
@@ -1776,7 +1777,7 @@ tr.detail td { padding: 0; background: var(--surface-2); }
       <div class="sec"><strong>Restore</strong><input type="file" id="bkFile" accept=".json,application/json" aria-label="Backup file"><textarea id="bkPaste" placeholder="Or paste backup text here" aria-label="Paste backup text"></textarea><div class="row-actions" style="margin:0"><button class="btn" id="bkRestore" type="button">Restore from backup</button></div></div>`);
     const payload = backupPayload();
     $("#bkText").value = payload;
-    $("#bkDl").onclick = () => saveFile(`fellowship-finder-backup-${E.iso(todayUTC())}.json`, payload, "application/json");
+    $("#bkDl").onclick = () => saveFile(`derm-research-shortlist-backup-${E.iso(todayUTC())}.json`, payload, "application/json");
     $("#bkCopy").onclick = () => copyText(payload, "Backup copied", $("#bkText"));
     $("#clrBtn").onclick = () => {
       const b = $("#clrBtn");

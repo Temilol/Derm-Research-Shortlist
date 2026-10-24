@@ -1,4 +1,4 @@
-# Handoff: Derm Fellowship Finder
+# Handoff: Derm Research Shortlist
 
 > **Note to any AI assistant working on this project:** read this entire file before responding to any prompt in this project, every time you see the project for the first time
 
