@@ -1,0 +1,6 @@
+# Optional Render Blueprint. The manual steps in README.md work the same way.
+services:
+  - type: web
+    name: derm-fellowship-finder
+    runtime: static
+    staticPublishPath: ./public
