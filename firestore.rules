@@ -18,10 +18,11 @@ service cloud.firestore {
         allow read, delete: if isOwner(uid);
         allow create, update: if isOwner(uid)
           && programId.size() <= 120
-          && request.resource.data.keys().hasOnly(["status", "statusAt", "notes", "notesAt", "decision", "decidedOn", "textHash", "decisionAt", "name", "state"])
+          && request.resource.data.keys().hasOnly(["status", "statusAt", "notes", "notesAt", "decision", "decidedOn", "textHash", "decisionAt", "name", "state", "items"])
           && request.resource.data.status is string && request.resource.data.status.size() <= 40
           && request.resource.data.notes is string && request.resource.data.notes.size() <= 20000
-          && request.resource.data.decision in ["", "shortlist", "excluded"];
+          && request.resource.data.decision in ["", "shortlist", "excluded"]
+          && (!("items" in request.resource.data) || (request.resource.data.items is map && request.resource.data.items.size() <= 300));
       }
     }
   }

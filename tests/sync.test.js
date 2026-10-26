@@ -102,3 +102,56 @@ test("the first device to sign in seeds the account's profile", () => {
   assert.deepEqual(m.profile, { us_citizen: true });
   assert.equal(m.remoteChanged, true);
 });
+
+test("checklist ticks merge one item at a time, newer wins", () => {
+  const m = mergeEntry(
+    { items: { cv: { done: true, at: 30 }, ps: { done: false, at: 10 } } },
+    { items: { ps: { done: true, at: 20 }, "c:1": { label: "Email PI", done: false, at: 5 } } }, true, NOW);
+  assert.deepEqual(m.local.items, { cv: { done: true, at: 30 }, ps: { done: true, at: 20 }, "c:1": { label: "Email PI", done: false, at: 5 } });
+  assert.equal(m.localChanged, true);
+  assert.equal(m.remoteChanged, true);
+  assert.deepEqual(m.remote.items, m.local.items);
+});
+
+test("a removed custom item stays removed when the removal is newer", () => {
+  const m = mergeEntry({ items: { "c:1": { label: "Email PI", removed: true, at: 40 } } }, { items: { "c:1": { label: "Email PI", done: true, at: 30 } } }, true, NOW);
+  assert.equal(m.local.items["c:1"].removed, true);
+});
+
+test("identical checklists change nothing, whatever the key order", () => {
+  const a = { status: "Applied", statusAt: 1, notes: "", decision: "", items: { cv: { done: true, at: 1 }, ps: { done: false, at: 2 } } };
+  const b = Object.assign({}, a, { items: { ps: { done: false, at: 2 }, cv: { done: true, at: 1 } } });
+  const m = mergeEntry(a, b, true, NOW);
+  assert.equal(m.localChanged, false);
+  assert.equal(m.remoteChanged, false);
+});
+
+test("letter writers added on two devices are both kept", () => {
+  const m = mergeProfile(
+    { writers: [{ id: "a", name: "Dr. Patel", at: 10 }] }, { writers: 10 },
+    { writers: [{ id: "b", name: "Dr. Kim", at: 20 }] }, { writers: 20 }, true);
+  assert.deepEqual(m.profile.writers.map((w) => w.name), ["Dr. Patel", "Dr. Kim"]);
+  assert.equal(m.localChanged, true);
+  assert.equal(m.remoteChanged, true);
+});
+
+test("a removed writer stays removed when the removal is newer", () => {
+  const m = mergeProfile(
+    { writers: [{ id: "a", name: "Dr. Patel", at: 30, removed: true }] }, { writers: 30 },
+    { writers: [{ id: "a", name: "Dr. Patel", at: 10 }] }, { writers: 10 }, true);
+  assert.equal(m.profile.writers[0].removed, true);
+});
+
+test("writer order alone never counts as a change", () => {
+  const a = [{ id: "a", name: "A", at: 1 }, { id: "b", name: "B", at: 2 }];
+  const m = mergeProfile({ writers: a }, { writers: 2 }, { writers: [a[1], a[0]] }, { writers: 2 }, true);
+  assert.equal(m.localChanged, false);
+  assert.equal(m.remoteChanged, false);
+});
+
+test("My documents merge one document at a time", () => {
+  const m = mergeProfile(
+    { docs: { cv: { done: true, at: 30 } } }, { docs: 30 },
+    { docs: { cv: { done: false, at: 10 }, usmle: { done: true, at: 20 } } }, { docs: 20 }, true);
+  assert.deepEqual(m.profile.docs, { cv: { done: true, at: 30 }, usmle: { done: true, at: 20 } });
+});

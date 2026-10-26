@@ -66,11 +66,115 @@
     if (r) { next.name = r.program; next.state = r.state; }
     if (!next.decision) { next.decision = ""; delete next.decidedOn; delete next.textHash; }
     // A cleared entry keeps its change times so the clear itself can sync.
-    if (!next.status && !next.notes && !next.decision && !next.statusAt && !next.notesAt && !next.decisionAt) delete S.tracker[id]; else S.tracker[id] = next;
+    if (!next.status && !next.notes && !next.decision && !next.statusAt && !next.notesAt && !next.decisionAt && !Object.keys(next.items || {}).length) delete S.tracker[id];
+    else S.tracker[id] = next;
     store.setJSON(K.tracker, S.tracker);
     queueSync(id);
   }
   const CLEARED = { status: "", notes: "", decision: "" };
+  const entryHasContent = (t) => !!(t && (t.status || t.notes || t.decision || Object.values(t.items || {}).some((i) => i.done && !i.removed)));
+
+  // ---------------------------------------------------------------- application checklist
+  // Items come from the program's text (r.checkItems, keyed by type) plus your own. Ticks live in tracker.items by key, each with its own change time.
+  // Shared documents are ticked once in Profile settings; a tick inside a program overrides that for the one program.
+  // My documents are profile.docs {key: {done, at}}; letter writers are profile.writers [{id, name, at, removed}].
+  // A program's letters are items "w:<writer id>", done meaning received.
+  const SHARED_DOCS = { cv: "CV/resume", usmle: "USMLE/Step scores", transcript: "Transcript", dean: "Dean's letter", photo: "Photo" };
+  const QUICK_ITEMS = ["Email PI", "Interview", "Thank-you note"];
+  const newKey = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  function setItem(id, key, patch) {
+    const items = Object.assign({}, (S.tracker[id] || {}).items);
+    items[key] = Object.assign({}, items[key], patch, { at: Date.now() });
+    setTrack(id, { items });
+  }
+  const liveWriters = () => (S.profile.writers || []).filter((w) => !w.removed);
+  function writersOf(id) {
+    const items = (S.tracker[id] || {}).items || {};
+    return liveWriters().filter((w) => items["w:" + w.id] && !items["w:" + w.id].removed)
+      .map((w) => ({ id: w.id, name: w.name, received: !!items["w:" + w.id].done }));
+  }
+  function checklistOf(r) {
+    const items = trackerOf(r.id).items || {}, docs = S.profile.docs || {};
+    const rows = [], seen = new Set();
+    for (const c of r.checkItems || []) {
+      seen.add(c.key);
+      const it = items[c.key], shared = c.key in SHARED_DOCS, ready = shared && !!(docs[c.key] && docs[c.key].done);
+      const done = it ? !!it.done : ready;
+      // A program's own tick only reads as an override when it disagrees with My documents.
+      const row = { key: c.key, label: c.label, done, shared: ready && done, override: shared && !!it && done !== ready };
+      if (c.key === "lor") {
+        row.label = c.count ? `${c.count} letter${c.count === 1 ? "" : "s"} of recommendation` : "Letters of recommendation";
+        row.need = c.count || 0; row.writers = writersOf(r.id);
+      }
+      rows.push(row);
+    }
+    for (const [k, it] of Object.entries(items)) {
+      if (seen.has(k) || it.removed || k.startsWith("w:")) continue;
+      if (k.startsWith("c:")) rows.push({ key: k, label: it.label, done: !!it.done, custom: true });
+      else if (it.done) rows.push({ key: k, label: it.label || k, done: true, gone: true });
+    }
+    return rows;
+  }
+  function progressOf(r) {
+    const rows = checklistOf(r);
+    return { done: rows.filter((x) => x.done).length, total: rows.length };
+  }
+  const isDueOpen = (r) => {
+    if (r.tier !== 1 || ["Applied", "Not Interested"].includes(trackerOf(r.id).status)) return false;
+    const p = progressOf(r);
+    return p.total > 0 && p.done < p.total;
+  };
+  function checklistHtml(r) {
+    const rows = checklistOf(r), id = esc(r.id);
+    const done = rows.filter((x) => x.done).length;
+    const pct = rows.length ? Math.round((done / rows.length) * 100) : 0;
+    const li = rows.map((x) => {
+      let sub = "", right = "";
+      if (x.shared) right = '<span class="tag sh">ready · shared</span>';
+      else if (x.override) right = '<span class="tag">set for this program</span>';
+      else if (x.gone) right = '<span class="tag">no longer listed</span>';
+      if (x.custom) { sub = ' <span class="tag">· your item</span>'; right = `<button class="x" type="button" data-ck-remove="${esc(x.key)}" data-id="${id}" aria-label="Remove ${esc(x.label)}">✕</button>`; }
+      if (x.key === "lor") {
+        const got = x.writers.filter((w) => w.received).length;
+        if (x.writers.length || x.need) sub = ` <span class="tag">· ${got}${x.need ? " of " + x.need : ""} received</span>`;
+        right = `<span class="writers">${x.writers.map((w) => `<span class="wr ${w.received ? "ok" : "no"}"><button type="button" data-ck-writer="${esc(w.id)}" data-id="${id}" aria-pressed="${w.received}" title="${w.received ? "Received. Click to mark as not received" : "Click when the letter is received"}">${esc(w.name)}</button><button class="x" type="button" data-ck-unwriter="${esc(w.id)}" data-id="${id}" aria-label="Remove ${esc(w.name)}">✕</button></span>`).join("")}<button class="btn small" type="button" data-ck-addwriter="${id}">+ Writer</button></span>`;
+      }
+      return `<li class="${x.done ? "done" : ""}"><input type="checkbox" data-ck="${esc(x.key)}" data-id="${id}" data-label="${esc(x.label)}" ${x.done ? "checked" : ""} aria-label="${esc(x.label)}"><span class="ck-lbl">${esc(x.label)}${sub}</span>${right}</li>`;
+    }).join("");
+    const st = trackerOf(r.id).status;
+    return `<div class="ck wide">
+      <div class="ck-head"><h3>Application checklist</h3>${rows.length ? `<div class="ck-prog"><span class="ck-bar"><i style="width:${pct}%"></i></span>${done} of ${rows.length} done</div>` : ""}</div>
+      ${rows.length ? `<ul>${li}</ul>` : `<p class="hint">Requirements not listed. Check the program page, then add what it asks for.</p>`}
+      <div class="ck-add"><input type="text" data-ck-add="${id}" placeholder="Add an item…" aria-label="Add a checklist item"><span class="q">Quick add:</span>${QUICK_ITEMS.map((q) => `<button class="btn small" type="button" data-ck-quick="${esc(q)}" data-id="${id}">${q}</button>`).join("")}</div>
+      ${rows.length && done === rows.length && st !== "Applied" ? `<div class="ck-done">Everything is ticked. <button class="btn small primary" type="button" data-ck-applied="${id}">Mark as Applied</button></div>` : ""}
+    </div>`;
+  }
+  // Redraw after a checklist change, keeping the cursor where the person was typing.
+  function afterChecklist(focusSel) {
+    renderChips(); renderOrphans(); renderBody(); refreshFilterOptions();
+    if (focusSel) { const el = $(focusSel); if (el) el.focus(); }
+  }
+  function openWriterInput(btn) {
+    const id = btn.dataset.ckAddwriter;
+    btn.outerHTML = `<input class="wr-in" type="text" list="writerNames" data-ck-writer-in="${esc(id)}" placeholder="Name, then Enter" aria-label="Letter writer’s name">`;
+    $(`[data-ck-writer-in="${CSS.escape(id)}"]`).focus();
+  }
+  function markApplied(id) {
+    setTrack(id, { status: "Applied" });
+    renderStatusChips(); afterChecklist();
+    toast(`Marked “${S.byId[id].program}” as Applied.`, { label: "Undo", run: () => { setTrack(id, { status: "Started" }); renderStatusChips(); afterChecklist(); } });
+  }
+  function addWriter(id, name) {
+    name = name.trim(); if (!name) return;
+    const list = (S.profile.writers || []).slice();
+    let w = list.find((x) => x.name.toLowerCase() === name.toLowerCase());
+    if (!w || w.removed) {
+      const fresh = { id: w ? w.id : newKey(), name, at: Date.now() };
+      S.profile.writers = w ? list.map((x) => (x.id === w.id ? fresh : x)) : list.concat([fresh]);
+      w = fresh; saveProfile(); renderDocs();
+    }
+    if (id) setItem(id, "w:" + w.id, { done: false, removed: false });
+  }
   const textHashOf = (r) => E.fnv([r.requirements, r.description, r.notes].join("\u0001"));
 
   // Column definitions. text() feeds filters and search; sort() feeds sorting.
@@ -114,7 +218,7 @@
     asOf: "",
     tracker: store.getJSON(K.tracker) || {}, byId: {},
     dataset: null, sheets: null, records: [], prepared: null, changes: null, changesMeta: null,
-    tab: "shortlist", filters: {}, global: "", sort: {}, tierFilter: null, quick: { paid: false, east: false, hideNI: false },
+    tab: "shortlist", filters: {}, global: "", sort: {}, tierFilter: null, quick: { paid: false, east: false, hideNI: false, dueOpen: false },
     cols: Object.assign({}, DEFAULT_COLS, store.getJSON(K.cols) || {}), expanded: new Set(),
     profileAt: store.getJSON(K.profileAt) || {},
   };
@@ -331,6 +435,7 @@
     if (S.quick.paid) rows = rows.filter((r) => r.payLabel.startsWith("Paid") || r.payLabel.startsWith("Stipend"));
     if (S.quick.east) rows = rows.filter((r) => r.location === "East Coast");
     if (S.quick.hideNI) rows = rows.filter((r) => trackerOf(r.id).status !== "Not Interested");
+    if (S.quick.dueOpen) rows = rows.filter(isDueOpen);
     const g = S.global.trim().toLowerCase();
     if (g) {
       rows = rows.filter((r) => {
@@ -419,6 +524,10 @@
     h += `<button class="chip plain" data-quick="paid" aria-pressed="${S.quick.paid}">Paid only</button>`;
     h += `<button class="chip plain" data-quick="east" aria-pressed="${S.quick.east}">East Coast only</button>`;
     h += `<button class="chip plain" data-quick="hideNI" aria-pressed="${S.quick.hideNI}">Hide “Not Interested”</button>`;
+    const open = rows.filter(isDueOpen).length;
+    if (open || S.quick.dueOpen) {
+      h += `<span class="sep"></span><button class="chip" style="--c:var(--t1)" data-quick="dueOpen" aria-pressed="${S.quick.dueOpen}" title="Due within 30 days, not yet applied, with checklist items left">Due soon, unfinished<span class="n">${open}</span></button>`;
+    }
     box.innerHTML = h;
   }
 
@@ -442,7 +551,7 @@
   // Orphans: saved statuses, notes or decisions whose program no longer exists in the loaded file (usually a renamed or deleted row).
   function orphanList() {
     if (!S.dataset) return [];
-    return Object.keys(S.tracker).filter((id) => !S.byId[id] && (S.tracker[id].status || S.tracker[id].notes || S.tracker[id].decision));
+    return Object.keys(S.tracker).filter((id) => !S.byId[id] && entryHasContent(S.tracker[id]));
   }
   function renderOrphans() {
     const n = orphanList().length, bar = $("#orphanBar");
@@ -480,7 +589,7 @@
     const o = S.tracker[id], cur = S.tracker[to] || {};
     // The entry already on the target wins field by field; notes from both are kept.
     const notes = [cur.notes, o.notes].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).join("\n\n");
-    const merged = { status: cur.status || o.status || "", notes, decision: cur.decision || o.decision || "" };
+    const merged = { status: cur.status || o.status || "", notes, decision: cur.decision || o.decision || "", items: Object.assign({}, o.items, cur.items) };
     if (merged.decision) { merged.decidedOn = cur.decision ? cur.decidedOn : o.decidedOn; merged.textHash = cur.decision ? cur.textHash : o.textHash; }
     setTrack(to, merged);
     setTrack(id, CLEARED);
@@ -580,8 +689,9 @@
       case "bucket":
         return `<span class="pill ${BUCKET_CLASS[r.bucket]}">${r.bucket}</span>` + (r.decision ? ` <span class="pill moved" title="You moved this out of Needs verification">Moved by you</span>` : "");
       case "status": {
-        const cur = trackerOf(r.id).status;
-        return `<select class="st ${cur ? "on" : ""}" data-track-status="${esc(r.id)}" aria-label="Status for ${esc(r.program)}">${STATUSES.map((s) => `<option value="${s}" ${s === cur ? "selected" : ""}>${s || "None"}</option>`).join("")}</select>`;
+        const cur = trackerOf(r.id).status, p = progressOf(r);
+        const prog = p.total ? `<span class="prog${p.done === p.total ? " full" : ""}" title="Checklist: ${p.done} of ${p.total} done">${p.done}/${p.total}${p.done === p.total ? " ✓" : ""}</span>` : "";
+        return `<div class="stwrap"><select class="st ${cur ? "on" : ""}" data-track-status="${esc(r.id)}" aria-label="Status for ${esc(r.program)}">${STATUSES.map((s) => `<option value="${s}" ${s === cur ? "selected" : ""}>${s || "None"}</option>`).join("")}</select>${prog}</div>`;
       }
       case "myNotes": return `<div class="clamp">${esc(trackerOf(r.id).notes)}</div>`;
       case "state": return `<span class="mono">${esc(r[c.key])}</span>`;
@@ -598,6 +708,7 @@
     const links = r.links.length ? `<div class="linklist">${r.links.map((l) => linkify(l)).join("")}</div>` : "";
     const moved = r.decision ? `<span class="pill moved">Moved by you to ${GROUP_LABEL[r.decision]}</span> ${r.changedSince ? '<span class="pill warn">Program text changed since</span> ' : ""}<button class="btn small" type="button" data-undo="${esc(r.id)}">Move back to Needs verification</button><br>` : "";
     return `<tr class="detail"><td colspan="${ncols}"><div class="dgrid">
+      ${r.group === "excluded" ? "" : checklistHtml(r)}
       ${sec("Why it is in this group", moved + `<span class="pill ${BUCKET_CLASS[r.bucket]}">${r.bucket}</span> ${esc(r.why || "No exclusion or verification flags. " + (r.bucket === "Eligible" ? "Text or columns explicitly accept graduates / post-PGY-1 MDs." : "Nothing in the text rules you out."))}`)}
       ${sec("Deadline", esc(r.deadlineNote) + (r.deadlineSheet ? `\nAs listed: ${esc(r.deadlineSheet)}` : ""))}
       ${sec("Pay", `<span class="pill p${r.payRank}">${esc(r.payLabel)}</span>\n${esc(r.payDetail)}`)}
@@ -682,6 +793,16 @@
     $("#s-step3").value = p.step3_status; $("#s-avail").value = p.available_from; $("#s-asof").value = S.asOf;
     $("#s-citizen").checked = !!p.us_citizen; $("#s-two").checked = !!p.two_year_ok; $("#s-remote").checked = !!p.remote_bonus;
     $("#stateChips").innerHTML = ALL_STATES.map((st) => `<button type="button" data-state="${st}" aria-pressed="${p.east_coast_states.includes(st)}">${st}</button>`).join("");
+    renderDocs();
+  }
+  function renderDocs() {
+    const docs = S.profile.docs || {}, writers = liveWriters();
+    $("#docsBox").innerHTML = Object.entries(SHARED_DOCS).map(([k, label]) =>
+      `<label class="doc ${docs[k] && docs[k].done ? "ok" : ""}"><input type="checkbox" data-doc="${k}" ${docs[k] && docs[k].done ? "checked" : ""}> ${esc(label)}</label>`).join("");
+    $("#writersBox").innerHTML = `<span class="wl">Letter writers:</span>` +
+      writers.map((w) => `<span class="wr"><span>${esc(w.name)}</span><button class="x" type="button" data-writer-del="${esc(w.id)}" aria-label="Remove ${esc(w.name)}">✕</button></span>`).join("") +
+      `<input class="wr-in" type="text" id="writerAdd" placeholder="Add a writer, then Enter" aria-label="Add a letter writer">`;
+    $("#writerNames").innerHTML = writers.map((w) => `<option value="${esc(w.name)}">`).join("");
   }
   function saveProfile() {
     // Stamp each setting that changed, so sync can merge the profile one setting at a time.
@@ -700,12 +821,16 @@
   const closeModal = () => { $("#modal").hidden = true; };
 
   function csvEscape(v) { v = String(v == null ? "" : v); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+  function csvChecklist(r) {
+    const rows = checklistOf(r), left = rows.filter((x) => !x.done).map((x) => x.label);
+    return [rows.length ? `${rows.length - left.length}/${rows.length}` : "", left.join("; ")];
+  }
   function buildCSV(rows) {
-    const head = ["Program", "State", "Director", "Eligibility (rule engine)", "Your decision", "Group (after your decisions)", "Why placed here", "Urgency", "Deadline (next/projected)", "Deadline projected?", "Days left", "Deadline detail", "Deadline (as listed)", "Pay", "Pay details", "Availability", "Length", "Key requirements", "Flags", "Application components", "Skills mentioned", "Apply / website", "Contact", "Location", "Status", "My notes", "ID"];
+    const head = ["Program", "State", "Director", "Eligibility (rule engine)", "Your decision", "Group (after your decisions)", "Why placed here", "Urgency", "Deadline (next/projected)", "Deadline projected?", "Days left", "Deadline detail", "Deadline (as listed)", "Pay", "Pay details", "Availability", "Length", "Key requirements", "Flags", "Application components", "Skills mentioned", "Apply / website", "Contact", "Location", "Status", "My notes", "Checklist progress", "Checklist items left", "ID"];
     const lines = [head.map(csvEscape).join(",")];
     for (const r of rows) {
       const t = trackerOf(r.id);
-      lines.push([r.program, r.state, r.director, r.origBucket || r.bucket, r.decision ? "Moved to " + GROUP_LABEL[r.decision] : "", GROUP_LABEL[r.group] || "", r.why, TIER_SHORT[r.tier], r.deadline, r.projected ? "yes" : "", r.days == null ? "" : r.days, r.deadlineNote, r.deadlineSheet, r.payLabel, r.payDetail, r.availability, r.length, r.keyReq, r.flags, r.components, r.skills, r.apply, r.contact, r.location, t.status, t.notes, r.id].map(csvEscape).join(","));
+      lines.push([r.program, r.state, r.director, r.origBucket || r.bucket, r.decision ? "Moved to " + GROUP_LABEL[r.decision] : "", GROUP_LABEL[r.group] || "", r.why, TIER_SHORT[r.tier], r.deadline, r.projected ? "yes" : "", r.days == null ? "" : r.days, r.deadlineNote, r.deadlineSheet, r.payLabel, r.payDetail, r.availability, r.length, r.keyReq, r.flags, r.components, r.skills, r.apply, r.contact, r.location, t.status, t.notes, ...csvChecklist(r), r.id].map(csvEscape).join(","));
     }
     return lines.join("\n");
   }
@@ -725,8 +850,8 @@
   }
   function downloadBackup() { saveFile(`derm-research-shortlist-backup-${E.iso(todayUTC())}.json`, backupPayload(), "application/json"); }
   function openBackup() {
-    const n = Object.values(S.tracker).filter((t) => t.status || t.notes || t.decision).length;
-    openModal("Backup & restore", `<p class="hint" style="margin:0">Your profile settings, application tracker (${n} program${n === 1 ? "" : "s"} with a status, note or decision), last loaded file and change history live only in this browser. Back them up before clearing browser data or switching devices.</p>
+    const n = Object.values(S.tracker).filter(entryHasContent).length;
+    openModal("Backup & restore", `<p class="hint" style="margin:0">Your profile settings, application tracker (${n} program${n === 1 ? "" : "s"} with a status, note, decision or checklist tick), last loaded file and change history live only in this browser. Back them up before clearing browser data or switching devices.</p>
       <div class="sec"><div class="row-actions" style="margin:0"><button class="btn primary" id="bkDl" type="button">Download backup file</button><button class="btn" id="bkCopy" type="button">Copy backup text</button></div><textarea id="bkText" readonly aria-label="Backup text"></textarea></div>
       <div class="sec"><strong>Clear saved file</strong><p class="hint" style="margin:0">Removes the last loaded spreadsheet and the change history from this browser. Your tracker statuses and notes are kept.</p><div class="row-actions" style="margin:0"><button class="btn" id="clrBtn" type="button">Clear saved file and change history</button></div></div>
       <div class="sec"><strong>Restore</strong><input type="file" id="bkFile" accept=".json,application/json" aria-label="Backup file"><textarea id="bkPaste" placeholder="Or paste backup text here" aria-label="Paste backup text"></textarea><div class="row-actions" style="margin:0"><button class="btn" id="bkRestore" type="button">Restore from backup</button></div></div>`);
@@ -765,7 +890,7 @@
       const p = $("#settingsPanel"); p.hidden = !p.hidden; $("#settingsBtn").setAttribute("aria-expanded", String(!p.hidden));
     };
     $("#closeSettings").onclick = () => { $("#settingsPanel").hidden = true; $("#settingsBtn").setAttribute("aria-expanded", "false"); };
-    $("#resetProfile").onclick = () => { S.profile = Object.assign({}, E.DEFAULT_PROFILE, { east_coast_states: E.EAST.slice() }); S.asOf = ""; renderSettings(); saveProfile(); toast("Profile reset"); };
+    $("#resetProfile").onclick = () => { S.profile = Object.assign({}, E.DEFAULT_PROFILE, { east_coast_states: E.EAST.slice() }, { docs: S.profile.docs || {}, writers: S.profile.writers || [] }); S.asOf = ""; renderSettings(); saveProfile(); toast("Profile reset"); };
     $("#backupBtn").onclick = openBackup;
     $("#emptyProfile").onclick = () => {
       const p = $("#settingsPanel"); p.hidden = false; $("#settingsBtn").setAttribute("aria-expanded", "true");
@@ -801,6 +926,20 @@
       else if (id === "s-two") p.two_year_ok = e.target.checked;
       else if (id === "s-remote") p.remote_bonus = e.target.checked;
       saveProfile();
+    });
+    $("#docsBox").addEventListener("change", (e) => {
+      const d = e.target.closest("[data-doc]"); if (!d) return;
+      S.profile.docs = Object.assign({}, S.profile.docs, { [d.dataset.doc]: { done: d.checked, at: Date.now() } });
+      saveProfile(); renderDocs();
+    });
+    $("#writersBox").addEventListener("click", (e) => {
+      const x = e.target.closest("[data-writer-del]"); if (!x) return;
+      S.profile.writers = (S.profile.writers || []).map((w) => (w.id === x.dataset.writerDel ? Object.assign({}, w, { removed: true, at: Date.now() }) : w));
+      saveProfile(); renderDocs();
+    });
+    $("#writersBox").addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || e.target.id !== "writerAdd") return;
+      addWriter("", e.target.value); renderDocs(); $("#writerAdd").focus();
     });
     $("#stateChips").addEventListener("click", (e) => {
       const b = e.target.closest("[data-state]"); if (!b) return;
@@ -862,7 +1001,32 @@
       const un = e.target.closest("[data-undo]");
       if (un) { setDecision(un.dataset.undo, ""); return; }
       const tg = e.target.closest("[data-exp]");
-      if (tg) { const id = tg.dataset.exp; if (S.expanded.has(id)) S.expanded.delete(id); else S.expanded.add(id); renderBody(); }
+      if (tg) { const id = tg.dataset.exp; if (S.expanded.has(id)) S.expanded.delete(id); else S.expanded.add(id); renderBody(); return; }
+      // Checklist actions
+      const b = e.target.closest("button[data-id]");
+      if (!b) { const aw = e.target.closest("[data-ck-addwriter]"); if (aw) openWriterInput(aw); else { const ap = e.target.closest("[data-ck-applied]"); if (ap) markApplied(ap.dataset.ckApplied); } return; }
+      const id = b.dataset.id;
+      if (b.dataset.ckRemove) { setItem(id, b.dataset.ckRemove, { removed: true, done: false }); afterChecklist(); }
+      else if (b.dataset.ckQuick) { setItem(id, "c:" + newKey(), { label: b.dataset.ckQuick, done: false }); afterChecklist(); }
+      else if (b.dataset.ckWriter) {
+        const key = "w:" + b.dataset.ckWriter, items = (S.tracker[id] || {}).items || {};
+        setItem(id, key, { done: !(items[key] && items[key].done) });
+        // Once enough letters are in, tick the letters item for you.
+        const r = S.byId[id], lor = r && checklistOf(r).find((x) => x.key === "lor");
+        if (lor && lor.need && !lor.done && lor.writers.filter((w) => w.received).length >= lor.need) setItem(id, "lor", { done: true, label: lor.label });
+        afterChecklist();
+      } else if (b.dataset.ckUnwriter) { setItem(id, "w:" + b.dataset.ckUnwriter, { removed: true, done: false }); afterChecklist(); }
+    });
+    tbl.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      const add = e.target.closest("[data-ck-add]");
+      if (add && add.value.trim()) { const id = add.dataset.ckAdd; setItem(id, "c:" + newKey(), { label: add.value.trim(), done: false }); afterChecklist(`[data-ck-add="${CSS.escape(id)}"]`); return; }
+      const wi = e.target.closest("[data-ck-writer-in]");
+      if (wi) { e.preventDefault(); addWriter(wi.dataset.ckWriterIn, wi.value); afterChecklist(); }
+    });
+    tbl.addEventListener("focusout", (e) => {
+      const wi = e.target.closest("[data-ck-writer-in]");
+      if (wi && !wi.value.trim()) setTimeout(() => { if (document.activeElement !== wi) renderBody(); }, 150);
     });
     tbl.addEventListener("input", (e) => {
       const f = e.target.closest("input[data-flt]");
@@ -873,6 +1037,8 @@
     tbl.addEventListener("change", (e) => {
       const f = e.target.closest("select[data-flt]");
       if (f) { filtersFor(S.tab)[f.dataset.flt] = f.value; renderBody(); return; }
+      const ck = e.target.closest("input[data-ck]");
+      if (ck) { setItem(ck.dataset.id, ck.dataset.ck, { done: ck.checked, label: ck.dataset.label }); afterChecklist(); return; }
       const st = e.target.closest("[data-track-status]");
       if (st) {
         const id = st.dataset.trackStatus;
@@ -917,7 +1083,7 @@
     appId: "1:12914943500:web:f7e0b6bcda8cd3685df029",
   };
   const F = window.FSync;
-  const hasContent = (t) => !!(t && (t.status || t.notes || t.decision));
+  const hasContent = entryHasContent;
 
   function setSync(state, err) {
     if (state === "error") {
@@ -1065,7 +1231,7 @@
       box.innerHTML = `<p>Synced as <b>${esc(SY.user.email)}</b> · <span class="sync-state s-${SY.state}">${SYNC_LABEL[SY.state]}</span></p>
         <div class="row-actions"><button class="btn small" type="button" data-sync="signout">Sign out</button><button class="btn small" type="button" data-sync="delete">Delete account</button></div>`;
     } else {
-      box.innerHTML = `<p class="hint">Optional. Sign in to keep your profile, statuses, notes and decisions the same on every device. Without it, everything stays in this browser.</p>
+      box.innerHTML = `<p class="hint">Optional. Sign in to keep your profile, statuses, notes, decisions and checklists the same on every device. Without it, everything stays in this browser.</p>
         <div class="row-actions"><button class="btn small primary" type="button" data-sync="signin"${SY.state === "connecting" ? " disabled" : ""}>Sign in or create account</button></div>`;
     }
     foot.innerHTML = on
@@ -1075,7 +1241,7 @@
 
   function openSignIn() {
     const email = (SY.user && SY.user.email) || "";
-    openModal("Sign in to sync", `<p class="hint" style="margin:0">Keeps your profile, statuses, notes and decisions the same on every device. The spreadsheet stays on each device, so upload it on each one.</p>
+    openModal("Sign in to sync", `<p class="hint" style="margin:0">Keeps your profile, statuses, notes, decisions and checklists the same on every device. The spreadsheet stays on each device, so upload it on each one.</p>
       <form class="auth-form" id="authForm" novalidate>
         <label class="field"><span class="lbl">Email</span><input type="email" id="authEmail" autocomplete="username" value="${esc(email)}"></label>
         <label class="field"><span class="lbl">Password</span><input type="password" id="authPw" autocomplete="current-password"></label>
@@ -1110,7 +1276,7 @@
 
   function openSignOut() {
     openModal("Sign out", `<p style="margin:0">Sign out of <b>${esc(SY.user.email)}</b> on this device?</p>
-      <p class="hint" style="margin:0">Your profile, statuses, notes and decisions are removed from this browser. They stay in your account and come back when you sign in again. The loaded spreadsheet stays.</p>
+      <p class="hint" style="margin:0">Your profile, statuses, notes, decisions and checklists are removed from this browser. They stay in your account and come back when you sign in again. The loaded spreadsheet stays.</p>
       <p class="auth-msg" id="soMsg" role="alert" hidden></p>
       <div class="row-actions" style="margin:0"><button class="btn primary" id="soYes" type="button">Sign out</button></div>`);
     $("#soYes").onclick = async () => {

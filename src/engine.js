@@ -461,31 +461,38 @@
   // ------------------------------------------------------------------ components, key requirements, links
   const NUM = { one: 1, two: 2, three: 3, four: 4, 1: 1, 2: 2, 3: 3, 4: 4 };
   const numOf = (x) => (NUM[x.toLowerCase()] !== undefined ? NUM[x.toLowerCase()] : x);
-  function appComponents(row) {
+  // Application items found in the program's text, as {key, label, count}. The key stays stable when the wording changes,
+  // so the checklist can keep its ticks across weekly uploads.
+  function appComponentList(row) {
     const t = prep(rawOr(row, "requirements")) + "\n" + prep(rawOr(row, "description"));
-    const comps = [];
+    const items = [];
     const has = (p) => search(p, t);
-    if (has(raw`\bcv\b|curriculum vitae|\bresume\b|resumé`)) comps.push("CV/resume");
-    if (has(raw`cover letter`)) comps.push("Cover letter");
-    if (has(raw`letter of (?:interest|intent)|statement of interest|statement of research|brief letter of interests`)) comps.push("Letter/statement of interest");
-    if (has(raw`personal statement|statement of purpose`)) comps.push("Personal statement");
+    const add = (key, label, count) => items.push(count ? { key, label, count } : { key, label });
+    if (has(raw`\bcv\b|curriculum vitae|\bresume\b|resumé`)) add("cv", "CV/resume");
+    if (has(raw`cover letter`)) add("cover", "Cover letter");
+    if (has(raw`letter of (?:interest|intent)|statement of interest|statement of research|brief letter of interests`)) add("interest", "Letter/statement of interest");
+    if (has(raw`personal statement|statement of purpose`)) add("ps", "Personal statement");
     let m = has(raw`\b(\d|one|two|three|four)\s*(?:strong\s+)?(?:\(?\d\)?\s*)?(?:letters? of (?:recommendation|reference|support)|LORs?|LOR's)`);
-    if (m) comps.push(`${numOf(m[1])} letter(s) of recommendation`);
-    else if (has(raw`letters? of (?:recommendation|reference)|\bLORs?\b|\bLOR's\b`)) comps.push("Letter(s) of recommendation");
+    if (m) add("lor", `${numOf(m[1])} letter(s) of recommendation`, Number(numOf(m[1])) || 0);
+    else if (has(raw`letters? of (?:recommendation|reference)|\bLORs?\b|\bLOR's\b`)) add("lor", "Letter(s) of recommendation");
     const m2 = has(raw`\b(\d|one|two|three|four|2-3|3-5)\s*(?:professional\s+)?references?`);
-    if (m2) comps.push(`${numOf(m2[1])} references`);
-    else if (has(raw`\breferences?\b`)) comps.push("References");
-    if (has(raw`transcript`)) comps.push("Transcript");
-    if (has(raw`\busmle\b|step\s*[123]|\bstep scores?\b|board scores`)) comps.push("USMLE/Step scores");
-    if (has(raw`\bmcat\b`)) comps.push("MCAT score");
-    if (has(raw`dean'?s letter|letter of good standing`)) comps.push("Dean's letter");
-    if (has(raw`headshot|photograph|\bpicture\b|\bphoto\b`)) comps.push("Photo");
-    if (has(raw`writing sample|best written piece|copies of any prior publications|list of publications|bibliography|research writing`)) comps.push("Writing sample/publications");
-    if (has(raw`research proposal|short research proposal`)) comps.push("Research proposal");
-    if (has(raw`\bERAS\b`)) comps.push("ERAS application");
-    if (has(raw`powerpoint`)) comps.push("Presentation");
-    if (has(raw`redcap|docs\.google\.com/forms|forms\.gle|smartsheet|application portal|apply (?:online|through)|online application|recruit\.ap\.uci|icims|apply\.mayoclinic|applyjobs|jobs\.cooperhealth|csod\.com`)) comps.push("Online application/portal");
-    return comps.length ? comps.join("; ") : "(not specified - see raw requirements)";
+    if (m2) add("refs", `${numOf(m2[1])} references`);
+    else if (has(raw`\breferences?\b`)) add("refs", "References");
+    if (has(raw`transcript`)) add("transcript", "Transcript");
+    if (has(raw`\busmle\b|step\s*[123]|\bstep scores?\b|board scores`)) add("usmle", "USMLE/Step scores");
+    if (has(raw`\bmcat\b`)) add("mcat", "MCAT score");
+    if (has(raw`dean'?s letter|letter of good standing`)) add("dean", "Dean's letter");
+    if (has(raw`headshot|photograph|\bpicture\b|\bphoto\b`)) add("photo", "Photo");
+    if (has(raw`writing sample|best written piece|copies of any prior publications|list of publications|bibliography|research writing`)) add("writing", "Writing sample/publications");
+    if (has(raw`research proposal|short research proposal`)) add("proposal", "Research proposal");
+    if (has(raw`\bERAS\b`)) add("eras", "ERAS application");
+    if (has(raw`powerpoint`)) add("presentation", "Presentation");
+    if (has(raw`redcap|docs\.google\.com/forms|forms\.gle|smartsheet|application portal|apply (?:online|through)|online application|recruit\.ap\.uci|icims|apply\.mayoclinic|applyjobs|jobs\.cooperhealth|csod\.com`)) add("portal", "Online application/portal");
+    return items;
+  }
+  function appComponents(row) {
+    const items = appComponentList(row);
+    return items.length ? items.map((i) => i.label).join("; ") : "(not specified - see raw requirements)";
   }
 
   function keyRequirements(row, eligFlags, step3Tags, lic, yrs, prof) {
@@ -690,7 +697,7 @@
       payLabel: pay.label, payRank: pay.rank, payDetail: pay.detail,
       availability: st.label + (st.cycle ? ` [${st.cycle}]` : ""), availabilityRaw: st.raw,
       length: yrs.text, keyReq: keyRequirements(row, ev.flags, s3, lic, yrs, prof),
-      flags: flags.join("; "), components: appComponents(row), skills: skills.join(", "),
+      flags: flags.join("; "), components: appComponents(row), checkItems: appComponentList(row), skills: skills.join(", "),
       apply, contact: trunc(row.contact || "", 160), location: loc.label, locRank: loc.rank,
       requirements: trunc(row.requirements || "", 1500), description: trunc(row.description || "", 1500),
       notes: trunc(row.notes || "", 800), positions: clean(row.positions || ""), website, sheetPaid: clean(row.paid || ""),

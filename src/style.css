@@ -282,6 +282,47 @@ tr.detail td { padding: 0; background: var(--surface-2); }
 .profile-line { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; }
 .drop-zone { border: 2px dashed var(--line); border-radius: 8px; padding: 22px 16px; display: flex; flex-direction: column; gap: 12px; align-items: center; text-align: center; }
 .empty-foot { margin: 0; text-align: right; color: var(--ink-3); font-size: 13px; }
+/* application checklist */
+.dgrid .ck { grid-column: 1 / -1; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 12px 14px; }
+.ck-head { display: flex; align-items: center; justify-content: space-between; gap: 6px 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.ck-prog { display: flex; align-items: center; gap: 10px; font: 500 12px var(--font-data); color: var(--ink-2); }
+.ck-bar { width: 120px; height: 6px; border-radius: 3px; background: var(--line-2); overflow: hidden; }
+.ck-bar i { display: block; height: 100%; background: var(--accent); }
+.ck ul { list-style: none; margin: 0; padding: 0; }
+.ck li { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; row-gap: 4px; min-height: 36px; padding: 5px 0; border-top: 1px solid var(--line-2); }
+.ck li:first-child { border-top: 0; }
+.ck li > .writers { grid-column: 2 / -1; }
+.ck input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.ck li.done .ck-lbl { color: var(--ink-3); text-decoration: line-through; }
+.ck .tag { font-size: 12px; color: var(--ink-3); text-decoration: none; display: inline-block; }
+.ck .tag.sh { color: var(--accent); }
+.ck .hint { margin: 0; color: var(--ink-2); }
+.writers, .writers-list { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.writers-list { margin-top: 8px; }
+.writers-list .wl { font-size: 13px; color: var(--ink-2); }
+.field .writers-list input.wr-in { width: 200px; min-height: 28px; padding: 3px 10px; border-radius: 999px; }
+.wr { display: inline-flex; align-items: center; gap: 2px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 4px 1px 10px; font-size: 12.5px; min-height: 28px; }
+.wr > button:first-child { background: none; border: 0; padding: 2px 0; cursor: pointer; font-size: inherit; }
+.wr.ok { border-color: var(--t4); }
+.wr.ok > button:first-child::before { content: "✓ "; color: var(--t4); font-weight: 700; }
+.wr.no > button:first-child::before { content: "○ "; color: var(--ink-3); }
+.ck .x, .wr .x { background: none; border: 0; color: var(--ink-3); cursor: pointer; font-size: 13px; padding: 4px 6px; }
+.ck .x:hover, .wr .x:hover { color: var(--t1); }
+.wr-in { background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; min-height: 28px; font-size: 12.5px; width: 190px; }
+.ck-add { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.ck-add input { background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; min-height: 30px; width: min(240px, 100%); }
+.ck-add .q { font-size: 12px; color: var(--ink-3); }
+.ck-done { margin-top: 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--ink-2); }
+.stwrap { display: flex; align-items: center; gap: 8px; }
+.prog { font: 500 12px var(--font-data); color: var(--ink-2); white-space: nowrap; }
+.prog.full { color: var(--t4); }
+.docs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.doc { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; font-size: 13px; background: var(--surface-2); cursor: pointer; }
+.doc.ok { border-color: var(--accent); background: var(--accent-soft); }
+.doc input { accent-color: var(--accent); margin: 0; }
+@media (min-width: 700px) { .ck li > .writers { grid-column: 3; justify-content: flex-end; } }
+@media (max-width: 640px) { .ck-prog { width: 100%; } .ck-bar { flex: 1; } }
+
 /* sync */
 .sync-sec { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line-2); }
 .sync-box p { margin: 0; color: var(--ink-2); }

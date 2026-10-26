@@ -10,7 +10,7 @@ A single-page website that reads the crowdsourced dermatology research-fellowshi
 
 1. Open the site. In Google Sheets choose File, Download, Microsoft Excel (.xlsx), then drop the file on the page.
 2. Open Profile settings first and enter your own facts: Step 3 status, the date you are available from, citizenship, and your preferred states. The defaults belong to the original user.
-3. Read the Shortlist. Work Needs verification by moving each program to Shortlist or Excluded. Track progress with the Status column and notes.
+3. Read the Shortlist. Work Needs verification by moving each program to Shortlist or Excluded. Track progress with the Status column, notes and each program's application checklist (open a program's details). Mark shared documents such as your CV once under Profile settings, My documents.
 4. Upload a fresh export weekly. Your statuses, notes and decisions carry over because they are saved by program. The What changed tab lists new, changed and removed programs.
 5. Saved data lives in your browser. To use more than one device, sign in to sync (Profile settings, Sync across devices). Without an account, use Backup & restore to move data or keep a copy before clearing browser data.
 
@@ -23,13 +23,22 @@ A single-page website that reads the crowdsourced dermatology research-fellowshi
 
 ## Changing the tool
 
-Everything is in `src/` (engine.js holds the rules, sync.js the cross-device sync, app.js the interface, style.css, template.html). Run `node build.js` to regenerate `public/index.html`, which is the page Render serves. Run `node --test tests/*.test.js` for the tests; they cover the sync merge rules, not the eligibility engine yet. If you use an AI assistant to make changes, give it this file, README.md and the `src` folder, and tell it: keep it a single static page with no server of its own, never filter on missing data, and keep statuses and notes stored by program ID in localStorage.
+Everything is in `src/` (engine.js holds the rules, sync.js the cross-device sync, app.js the interface, style.css, template.html). Run `node build.js` to regenerate `public/index.html`, which is the page Render serves. Run `node --test tests/*.test.js` for the tests; they cover the sync merge rules (including checklists), not the eligibility engine yet. A new field on a tracker entry must also be added to `firestore.rules` and republished, or sync refuses it. If you use an AI assistant to make changes, give it this file, README.md and the `src` folder, and tell it: keep it a single static page with no server of its own, never filter on missing data, and keep statuses and notes stored by program ID in localStorage.
+
+## Application checklist
+
+Each program's details open with a checklist built from the application items the engine finds in its text (`appComponentList` in engine.js, keyed by type such as `cv`, `ps`, `lor`, so ticks survive rewording). People add their own items too. Ticks live in the tracker entry as `items` {key: {done, at, label?, removed?}}.
+
+- Shared documents (CV, USMLE scores, transcript, dean's letter, photo) are ticked once in Profile settings, My documents (`profile.docs`). A tick inside one program overrides that for the one program.
+- Letter writers are `profile.writers` [{id, name, at, removed}]; a program's letters are items `w:<writer id>`, done meaning received. The letters item ticks itself once enough letters are in.
+- An item the sheet stops listing keeps its tick and shows "no longer listed"; unticked ones drop off. Status is never changed automatically; "Mark as Applied" appears when everything is ticked.
+- Items, documents and writers merge one at a time across devices, and removals are kept as flagged entries so they sync.
 
 ## Sync across devices
 
 Optional email and password sign-in through Firebase (project `derm-research-shortlist`; Authentication and Firestore). The Firebase SDK loads only after someone signs in, so the page stays light for everyone else.
 
-- localStorage stays the working copy on each device. Firestore holds `users/{uid}` (profile) and `users/{uid}/tracker/{programId}` (status, notes, decision). The spreadsheet, the What changed snapshot and column choices stay on each device.
+- localStorage stays the working copy on each device. Firestore holds `users/{uid}` (profile, including My documents and letter writers) and `users/{uid}/tracker/{programId}` (status, notes, decision, checklist items). The spreadsheet, the What changed snapshot and column choices stay on each device.
 - Merging is field by field and the newer edit wins. Every status, note, decision and profile setting stores when it last changed. On a tie the account wins, so a fresh device never overwrites real settings. A note edited on two devices keeps both versions. A clear is an edit and syncs; entries are never deleted while syncing.
 - Signing out removes the synced data from that browser; it stays in the account. Deleting the account removes the account and its Firestore data and leaves the browser's own copy.
 - Access control is `firestore.rules`: each person can read and write only their own records. Paste it into Firebase console, Firestore Database, Rules, and Publish after any change. The web config in app.js is public by design.

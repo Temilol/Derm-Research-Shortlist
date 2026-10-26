@@ -41,6 +41,17 @@
     return { notes: out.notes || "", notesAt: out.notesAt || 0 };
   }
 
+  // Checklist items ({key: {done, at, ...}}) merge one item at a time; the newer change wins, the account on a tie.
+  function mergeItems(local, remote) {
+    const l = local || {}, r = remote || {}, out = {};
+    for (const k of new Set([...Object.keys(l), ...Object.keys(r)])) {
+      const a = l[k], b = r[k];
+      out[k] = !b ? a : !a ? b : (a.at || 0) > (b.at || 0) ? a : b;
+    }
+    return out;
+  }
+  const itemsKey = (items) => JSON.stringify(Object.keys(items || {}).sort().map((k) => [k, items[k]]));
+
   // Merge one program's entry. Returns the entry to keep locally, the one to write remotely, and what changed.
   function mergeEntry(local, remote, remoteExists, now) {
     local = local || {}; remote = remote || {};
@@ -55,30 +66,53 @@
     const name = local.name || remote.name, state = local.state || remote.state;
     if (name) m.name = name;
     if (state) m.state = state;
+    const items = mergeItems(local.items, remote.items);
+    if (Object.keys(items).length) m.items = items;
     const remoteOut = {};
     for (const f of ENTRY_FIELDS) if (m[f] !== undefined && m[f] !== "") remoteOut[f] = m[f];
     for (const f of ["status", "notes", "decision"]) remoteOut[f] = m[f];
+    if (m.items) remoteOut.items = m.items;
     const localOut = Object.assign({}, m, { notesSyncedAt: m.notesAt || 0 });
     return {
       local: localOut,
       remote: remoteOut,
-      localChanged: !sameOn(local, m, ENTRY_FIELDS),
-      remoteChanged: !remoteExists || !sameOn(remote, m, ENTRY_FIELDS),
+      localChanged: !sameOn(local, m, ENTRY_FIELDS) || itemsKey(local.items) !== itemsKey(m.items),
+      remoteChanged: !remoteExists || !sameOn(remote, m, ENTRY_FIELDS) || itemsKey(remote.items) !== itemsKey(m.items),
       conflict: !!n.conflict,
     };
   }
+
+  // My documents ({key: {done, at}}) and letter writers ([{id, name, at, removed}]) merge one document or writer at a time,
+  // so two devices each adding a writer keep both.
+  const byId = (list) => Object.fromEntries((list || []).map((w) => [w.id, w]));
+  function mergeWriters(local, remote) {
+    const merged = mergeItems(byId(local), byId(remote));
+    const order = [...(local || []), ...(remote || [])].map((w) => w.id).filter((id, i, a) => a.indexOf(id) === i);
+    return order.map((id) => merged[id]);
+  }
+  const PER_ELEMENT = { docs: (l, r) => mergeItems(l, r), writers: mergeWriters };
 
   // Profile settings merge one setting at a time. A setting never edited on this device loses to the account.
   function mergeProfile(local, localAt, remote, remoteAt, remoteExists) {
     const profile = {}, profileAt = {};
     let localChanged = false, remoteChanged = !remoteExists;
     const keys = new Set([...Object.keys(local || {}), ...Object.keys(remote || {})]);
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     for (const k of keys) {
+      if (k in PER_ELEMENT) {
+        profile[k] = PER_ELEMENT[k](local[k], remoteExists ? remote[k] : undefined);
+        const at = Math.max((localAt && localAt[k]) || 0, (remoteAt && remoteAt[k]) || 0);
+        if (at) profileAt[k] = at;
+        // Compare writers by id, not position, so devices listing them in a different order don't keep rewriting each other.
+        const key = (v) => itemsKey(k === "writers" ? byId(v) : v);
+        if (key(profile[k]) !== key(local[k])) localChanged = true;
+        if (!remoteExists || key(profile[k]) !== key(remote[k])) remoteChanged = true;
+        continue;
+      }
       const lA = (localAt && localAt[k]) || 0, rA = (remoteAt && remoteAt[k]) || 0;
       const useLocal = !remoteExists || !(k in remote) || lA > rA;
       profile[k] = useLocal ? local[k] : remote[k];
       if (Math.max(lA, rA)) profileAt[k] = useLocal ? lA : rA;
-      const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
       if (!same(profile[k], local[k])) localChanged = true;
       if (!remoteExists || !same(profile[k], remote[k]) || (profileAt[k] || 0) !== rA) remoteChanged = true;
     }
