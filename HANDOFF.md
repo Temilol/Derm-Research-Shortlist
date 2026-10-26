@@ -43,7 +43,7 @@ Optional email and password sign-in through Firebase (project `derm-research-sho
 - Signing out removes the synced data from that browser; it stays in the account. Deleting the account removes the account and its Firestore data and leaves the browser's own copy.
 - Access control is `firestore.rules`: each person can read and write only their own records. Paste it into Firebase console, Firestore Database, Rules, and Publish after any change. The web config in app.js is public by design.
 - The Firebase project holds users' email addresses. Free plan limits apply (Firestore reads and writes per day, sign-in emails per day).
-- Firebase's authorized domains must include the live domain (and `localhost` for local testing).
+- Firebase's authorized domains must include the live domain (and `localhost` for local testing). The web key is also restricted by website in Google Cloud (APIs & Services, Credentials: the live domain and `http://localhost:8765/*`) and limited to Firebase's own APIs. Add any new domain in both places, or sign-in fails.
 
 ## Instruction files
 
