@@ -39,16 +39,29 @@
   </section>
 
   <section class="panel empty-state" id="emptyState" hidden aria-label="Load a spreadsheet">
-    <h2>Load your spreadsheet</h2>
-    <p>Drop the fellowship spreadsheet anywhere on this page, or choose a file. It is analyzed in your browser and never sent to a server.</p>
-    <ol>
-      <li>In Google Sheets, choose File, Download, Microsoft Excel (.xlsx).</li>
-      <li>Drop that file here, or press Upload spreadsheet.</li>
-      <li>Read the Shortlist. It is ordered by deadline urgency, then pay, then location.</li>
+    <ol class="steps">
+      <li>
+        <span class="num" aria-hidden="true">1</span>
+        <h2>Check your profile</h2>
+        <div class="profile-line"><p id="profileSummary"></p><button class="btn small" id="emptyProfile" type="button">Edit profile</button></div>
+      </li>
+      <li>
+        <span class="num" aria-hidden="true">2</span>
+        <h2>Download the sheet</h2>
+        <p id="sheetStep"></p>
+      </li>
+      <li>
+        <span class="num" aria-hidden="true">3</span>
+        <h2>Drop the file here</h2>
+        <div class="drop-zone">
+          <p>Drop the .xlsx anywhere on this page, or</p>
+          <button class="btn primary" id="emptyUpload" type="button">Upload spreadsheet</button>
+        </div>
+        <p class="hint">Analyzed in your browser. Never sent to a server.</p>
+      </li>
     </ol>
-    <div class="row-actions"><button class="btn primary" id="emptyUpload" type="button">Upload spreadsheet</button></div>
-    <p class="hint" style="margin:12px 0 0">Profile settings (top right) decide who counts as eligible. Adjust them before or after you upload.</p>
   </section>
+  <p class="empty-foot" id="emptyFoot" hidden>Moving from another device? <button class="link-btn" id="emptyBackup" type="button">Backup &amp; restore</button></p>
 
   <div class="notice info orphan-bar" id="orphanBar" hidden><span id="orphanText"></span> <button class="btn small" id="orphanBtn" type="button">Review</button></div>
 

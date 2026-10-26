@@ -262,7 +262,18 @@ tr.detail td { padding: 0; background: var(--surface-2); }
   .btn, .chip, .tab { transition: border-color 0.12s, background-color 0.12s; }
 }
 
-.empty-state { max-width: 640px; border-style: dashed; border-width: 2px; border-color: var(--line); box-shadow: none; padding: 24px; }
-.empty-state h2 { font: 600 20px/1.2 var(--font-display); margin: 0 0 8px; }
-.empty-state p { margin: 0 0 12px; color: var(--ink-2); }
-.empty-state ol { margin: 0 0 16px; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+/* Empty state: the page narrows to one centered column and the header actions move into the steps. */
+.app.is-empty { max-width: 720px; }
+.app.is-empty .actions { display: none; }
+.empty-state { padding: 24px; }
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 22px; }
+.steps > li { display: grid; grid-template-columns: 28px minmax(0, 1fr); column-gap: 14px; row-gap: 6px; }
+.steps > li > * { grid-column: 2; }
+.steps .num { grid-column: 1; grid-row: 1; width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); color: var(--ink); display: grid; place-items: center; font-weight: 600; font-size: 14px; }
+.steps h2 { grid-row: 1; align-self: center; margin: 0; font: 600 18px/1.2 var(--font-display); }
+.steps p { margin: 0; color: var(--ink-2); }
+.steps .hint { color: var(--ink-3); font-size: 13px; }
+.profile-line { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; }
+.drop-zone { border: 2px dashed var(--line); border-radius: 8px; padding: 22px 16px; display: flex; flex-direction: column; gap: 12px; align-items: center; text-align: center; }
+.empty-foot { margin: 0; text-align: right; color: var(--ink-3); font-size: 13px; }
+.link-btn { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }

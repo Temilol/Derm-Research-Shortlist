@@ -274,10 +274,21 @@ tr.detail td { padding: 0; background: var(--surface-2); }
   .btn, .chip, .tab { transition: border-color 0.12s, background-color 0.12s; }
 }
 
-.empty-state { max-width: 640px; border-style: dashed; border-width: 2px; border-color: var(--line); box-shadow: none; padding: 24px; }
-.empty-state h2 { font: 600 20px/1.2 var(--font-display); margin: 0 0 8px; }
-.empty-state p { margin: 0 0 12px; color: var(--ink-2); }
-.empty-state ol { margin: 0 0 16px; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+/* Empty state: the page narrows to one centered column and the header actions move into the steps. */
+.app.is-empty { max-width: 720px; }
+.app.is-empty .actions { display: none; }
+.empty-state { padding: 24px; }
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 22px; }
+.steps > li { display: grid; grid-template-columns: 28px minmax(0, 1fr); column-gap: 14px; row-gap: 6px; }
+.steps > li > * { grid-column: 2; }
+.steps .num { grid-column: 1; grid-row: 1; width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); color: var(--ink); display: grid; place-items: center; font-weight: 600; font-size: 14px; }
+.steps h2 { grid-row: 1; align-self: center; margin: 0; font: 600 18px/1.2 var(--font-display); }
+.steps p { margin: 0; color: var(--ink-2); }
+.steps .hint { color: var(--ink-3); font-size: 13px; }
+.profile-line { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; }
+.drop-zone { border: 2px dashed var(--line); border-radius: 8px; padding: 22px 16px; display: flex; flex-direction: column; gap: 12px; align-items: center; text-align: center; }
+.empty-foot { margin: 0; text-align: right; color: var(--ink-3); font-size: 13px; }
+.link-btn { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 
 </style>
 </head>
@@ -316,16 +327,29 @@ tr.detail td { padding: 0; background: var(--surface-2); }
   </section>
 
   <section class="panel empty-state" id="emptyState" hidden aria-label="Load a spreadsheet">
-    <h2>Load your spreadsheet</h2>
-    <p>Drop the fellowship spreadsheet anywhere on this page, or choose a file. It is analyzed in your browser and never sent to a server.</p>
-    <ol>
-      <li>In Google Sheets, choose File, Download, Microsoft Excel (.xlsx).</li>
-      <li>Drop that file here, or press Upload spreadsheet.</li>
-      <li>Read the Shortlist. It is ordered by deadline urgency, then pay, then location.</li>
+    <ol class="steps">
+      <li>
+        <span class="num" aria-hidden="true">1</span>
+        <h2>Check your profile</h2>
+        <div class="profile-line"><p id="profileSummary"></p><button class="btn small" id="emptyProfile" type="button">Edit profile</button></div>
+      </li>
+      <li>
+        <span class="num" aria-hidden="true">2</span>
+        <h2>Download the sheet</h2>
+        <p id="sheetStep"></p>
+      </li>
+      <li>
+        <span class="num" aria-hidden="true">3</span>
+        <h2>Drop the file here</h2>
+        <div class="drop-zone">
+          <p>Drop the .xlsx anywhere on this page, or</p>
+          <button class="btn primary" id="emptyUpload" type="button">Upload spreadsheet</button>
+        </div>
+        <p class="hint">Analyzed in your browser. Never sent to a server.</p>
+      </li>
     </ol>
-    <div class="row-actions"><button class="btn primary" id="emptyUpload" type="button">Upload spreadsheet</button></div>
-    <p class="hint" style="margin:12px 0 0">Profile settings (top right) decide who counts as eligible. Adjust them before or after you upload.</p>
   </section>
+  <p class="empty-foot" id="emptyFoot" hidden>Moving from another device? <button class="link-btn" id="emptyBackup" type="button">Backup &amp; restore</button></p>
 
   <div class="notice info orphan-bar" id="orphanBar" hidden><span id="orphanText"></span> <button class="btn small" id="orphanBtn" type="button">Review</button></div>
 
@@ -1147,6 +1171,9 @@ tr.detail td { padding: 0; background: var(--surface-2); }
   const K = { profile: "drs.profile.v1", tracker: "drs.tracker.v1", dataset: "drs.dataset.v1", snapshot: "drs.snapshot.v1", cols: "drs.cols.v1" };
 
   // ---------------------------------------------------------------- constants
+  // The crowdsourced fellowship sheet. Empty until the real link is known; the first-run steps then show no link.
+  const SHEET_URL = "";
+  const STEP3_LABEL = { not_taken: "Step 3 not taken", planned: "Step 3 planned", passed: "Step 3 passed" };
   const TIER_SHORT = { 1: "Due ≤ 30 days", 2: "Due 31–90 days", 3: "Due later", 4: "Rolling", 5: "Passed · projected", 6: "No date" };
   const BUCKET_CLASS = { "Eligible": "b-Eligible", "Likely eligible": "b-Likely", "Needs verification": "b-Needs", "Excluded": "b-Excluded" };
   const BUCKET_ORDER = { "Eligible": 0, "Likely eligible": 1, "Needs verification": 2, "Excluded": 3 };
@@ -1468,21 +1495,31 @@ tr.detail td { padding: 0; background: var(--surface-2); }
   function renderAll() {
     const has = !!S.dataset;
     for (const id of ["tabs", "chips", "tools", "frame", "legend"]) $("#" + id).hidden = !has;
-    $("#emptyState").hidden = has;
+    $("#emptyState").hidden = has; $("#emptyFoot").hidden = has;
+    $("#app").classList.toggle("is-empty", !has);
     renderSource();
-    if (!has) return;
+    if (!has) { renderEmpty(); return; }
     renderTabs(); renderChips(); renderToolsVisibility(); renderTable(); renderLegend(); renderOrphans();
   }
 
   function renderSource() {
     const ds = S.dataset;
-    if (!ds) { $("#sourceLine").textContent = "No file loaded yet. Upload the fellowship spreadsheet to build your report."; return; }
+    if (!ds) { $("#sourceLine").textContent = "Sorts the fellowship sheet into Shortlist, Needs verification and Excluded."; return; }
     const n = S.records.length;
     const when = fmtDate(ds.loadedAt);
     const intro = `Analyzing <b>${esc(ds.label)}</b> (${n} programs from “${esc(ds.sheetName)}”, loaded ${when}).`;
     const s = S.profile;
-    const step = { not_taken: "Step 3 not taken", planned: "Step 3 planned", passed: "Step 3 passed" }[s.step3_status];
-    $("#sourceLine").innerHTML = `${intro} Filtered for a US ${s.us_citizen ? "citizen" : "applicant"} available ${fmtDate(s.available_from)}, ${step}. Deadlines are measured from ${fmtDate(E.iso(todayUTC()))}.`;
+    $("#sourceLine").innerHTML = `${intro} Filtered for a US ${s.us_citizen ? "citizen" : "applicant"} available ${fmtDate(s.available_from)}, ${STEP3_LABEL[s.step3_status]}. Deadlines are measured from ${fmtDate(E.iso(todayUTC()))}.`;
+  }
+
+  function renderEmpty() {
+    const p = S.profile, st = p.east_coast_states;
+    const states = st.length === 0 ? "no states ranked first" : st.length <= 5 ? `${st.join(", ")} ranked first` : `${st.length} states ranked first`;
+    $("#profileSummary").textContent = `Available ${fmtDate(p.available_from)} · ${p.us_citizen ? "US citizen" : "Not a US citizen"} · ${STEP3_LABEL[p.step3_status]} · ${states}`;
+    const dl = "then choose File → Download → Microsoft Excel (.xlsx).";
+    $("#sheetStep").innerHTML = SHEET_URL
+      ? `<a href="${esc(SHEET_URL)}" target="_blank" rel="noopener">Open the fellowship sheet ↗</a>, ${dl}`
+      : `Open the fellowship sheet in Google Sheets, ${dl}`;
   }
 
   function renderTabs() {
@@ -1769,7 +1806,7 @@ tr.detail td { padding: 0; background: var(--surface-2); }
     $("#s-citizen").checked = !!p.us_citizen; $("#s-two").checked = !!p.two_year_ok; $("#s-remote").checked = !!p.remote_bonus;
     $("#stateChips").innerHTML = ALL_STATES.map((st) => `<button type="button" data-state="${st}" aria-pressed="${p.east_coast_states.includes(st)}">${st}</button>`).join("");
   }
-  function saveProfile() { store.setJSON(K.profile, S.profile); if (S.dataset) recompute(); }
+  function saveProfile() { store.setJSON(K.profile, S.profile); if (S.dataset) recompute(); else renderEmpty(); }
 
   // ---------------------------------------------------------------- modal
   function openModal(title, html) {
@@ -1845,6 +1882,11 @@ tr.detail td { padding: 0; background: var(--surface-2); }
     $("#closeSettings").onclick = () => { $("#settingsPanel").hidden = true; $("#settingsBtn").setAttribute("aria-expanded", "false"); };
     $("#resetProfile").onclick = () => { S.profile = Object.assign({}, E.DEFAULT_PROFILE, { east_coast_states: E.EAST.slice() }); S.asOf = ""; renderSettings(); saveProfile(); toast("Profile reset"); };
     $("#backupBtn").onclick = openBackup;
+    $("#emptyBackup").onclick = openBackup;
+    $("#emptyProfile").onclick = () => {
+      const p = $("#settingsPanel"); p.hidden = false; $("#settingsBtn").setAttribute("aria-expanded", "true");
+      p.scrollIntoView({ block: "start" }); $("#s-step3").focus({ preventScroll: true });
+    };
     $("#saveBackup").onclick = downloadBackup;
     $("#saveDismiss").onclick = () => { saveFail.dismissed = true; renderSaveBar(); };
     $("#mClose").onclick = closeModal;

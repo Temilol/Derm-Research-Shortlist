@@ -20,6 +20,9 @@
   const K = { profile: "drs.profile.v1", tracker: "drs.tracker.v1", dataset: "drs.dataset.v1", snapshot: "drs.snapshot.v1", cols: "drs.cols.v1" };
 
   // ---------------------------------------------------------------- constants
+  // The crowdsourced fellowship sheet. Empty until the real link is known; the first-run steps then show no link.
+  const SHEET_URL = "";
+  const STEP3_LABEL = { not_taken: "Step 3 not taken", planned: "Step 3 planned", passed: "Step 3 passed" };
   const TIER_SHORT = { 1: "Due ≤ 30 days", 2: "Due 31–90 days", 3: "Due later", 4: "Rolling", 5: "Passed · projected", 6: "No date" };
   const BUCKET_CLASS = { "Eligible": "b-Eligible", "Likely eligible": "b-Likely", "Needs verification": "b-Needs", "Excluded": "b-Excluded" };
   const BUCKET_ORDER = { "Eligible": 0, "Likely eligible": 1, "Needs verification": 2, "Excluded": 3 };
@@ -341,21 +344,31 @@
   function renderAll() {
     const has = !!S.dataset;
     for (const id of ["tabs", "chips", "tools", "frame", "legend"]) $("#" + id).hidden = !has;
-    $("#emptyState").hidden = has;
+    $("#emptyState").hidden = has; $("#emptyFoot").hidden = has;
+    $("#app").classList.toggle("is-empty", !has);
     renderSource();
-    if (!has) return;
+    if (!has) { renderEmpty(); return; }
     renderTabs(); renderChips(); renderToolsVisibility(); renderTable(); renderLegend(); renderOrphans();
   }
 
   function renderSource() {
     const ds = S.dataset;
-    if (!ds) { $("#sourceLine").textContent = "No file loaded yet. Upload the fellowship spreadsheet to build your report."; return; }
+    if (!ds) { $("#sourceLine").textContent = "Sorts the fellowship sheet into Shortlist, Needs verification and Excluded."; return; }
     const n = S.records.length;
     const when = fmtDate(ds.loadedAt);
     const intro = `Analyzing <b>${esc(ds.label)}</b> (${n} programs from “${esc(ds.sheetName)}”, loaded ${when}).`;
     const s = S.profile;
-    const step = { not_taken: "Step 3 not taken", planned: "Step 3 planned", passed: "Step 3 passed" }[s.step3_status];
-    $("#sourceLine").innerHTML = `${intro} Filtered for a US ${s.us_citizen ? "citizen" : "applicant"} available ${fmtDate(s.available_from)}, ${step}. Deadlines are measured from ${fmtDate(E.iso(todayUTC()))}.`;
+    $("#sourceLine").innerHTML = `${intro} Filtered for a US ${s.us_citizen ? "citizen" : "applicant"} available ${fmtDate(s.available_from)}, ${STEP3_LABEL[s.step3_status]}. Deadlines are measured from ${fmtDate(E.iso(todayUTC()))}.`;
+  }
+
+  function renderEmpty() {
+    const p = S.profile, st = p.east_coast_states;
+    const states = st.length === 0 ? "no states ranked first" : st.length <= 5 ? `${st.join(", ")} ranked first` : `${st.length} states ranked first`;
+    $("#profileSummary").textContent = `Available ${fmtDate(p.available_from)} · ${p.us_citizen ? "US citizen" : "Not a US citizen"} · ${STEP3_LABEL[p.step3_status]} · ${states}`;
+    const dl = "then choose File → Download → Microsoft Excel (.xlsx).";
+    $("#sheetStep").innerHTML = SHEET_URL
+      ? `<a href="${esc(SHEET_URL)}" target="_blank" rel="noopener">Open the fellowship sheet ↗</a>, ${dl}`
+      : `Open the fellowship sheet in Google Sheets, ${dl}`;
   }
 
   function renderTabs() {
@@ -642,7 +655,7 @@
     $("#s-citizen").checked = !!p.us_citizen; $("#s-two").checked = !!p.two_year_ok; $("#s-remote").checked = !!p.remote_bonus;
     $("#stateChips").innerHTML = ALL_STATES.map((st) => `<button type="button" data-state="${st}" aria-pressed="${p.east_coast_states.includes(st)}">${st}</button>`).join("");
   }
-  function saveProfile() { store.setJSON(K.profile, S.profile); if (S.dataset) recompute(); }
+  function saveProfile() { store.setJSON(K.profile, S.profile); if (S.dataset) recompute(); else renderEmpty(); }
 
   // ---------------------------------------------------------------- modal
   function openModal(title, html) {
@@ -718,6 +731,11 @@
     $("#closeSettings").onclick = () => { $("#settingsPanel").hidden = true; $("#settingsBtn").setAttribute("aria-expanded", "false"); };
     $("#resetProfile").onclick = () => { S.profile = Object.assign({}, E.DEFAULT_PROFILE, { east_coast_states: E.EAST.slice() }); S.asOf = ""; renderSettings(); saveProfile(); toast("Profile reset"); };
     $("#backupBtn").onclick = openBackup;
+    $("#emptyBackup").onclick = openBackup;
+    $("#emptyProfile").onclick = () => {
+      const p = $("#settingsPanel"); p.hidden = false; $("#settingsBtn").setAttribute("aria-expanded", "true");
+      p.scrollIntoView({ block: "start" }); $("#s-step3").focus({ preventScroll: true });
+    };
     $("#saveBackup").onclick = downloadBackup;
     $("#saveDismiss").onclick = () => { saveFail.dismissed = true; renderSaveBar(); };
     $("#mClose").onclick = closeModal;
