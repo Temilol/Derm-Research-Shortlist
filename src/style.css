@@ -269,6 +269,8 @@ tr.detail td { padding: 0; background: var(--surface-2); }
 /* Empty state: the page narrows to one centered column and the header actions move into the steps. */
 .app.is-empty { max-width: 720px; }
 .app.is-empty .actions { display: none; }
+/* Until the script decides which screen to show, show only the title, never the wrong layout. */
+.app.is-booting .actions, .app.is-booting .sub { visibility: hidden; }
 .empty-state { padding: 24px; }
 .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 22px; }
 .steps > li { display: grid; grid-template-columns: 28px minmax(0, 1fr); column-gap: 14px; row-gap: 6px; }

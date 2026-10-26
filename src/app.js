@@ -373,6 +373,7 @@
     for (const id of ["tabs", "chips", "tools", "frame", "legend"]) $("#" + id).hidden = !has;
     $("#emptyState").hidden = has; $("#emptyFoot").hidden = has;
     $("#app").classList.toggle("is-empty", !has);
+    $("#app").classList.remove("is-booting");
     renderSource();
     if (!has) { renderEmpty(); return; }
     renderTabs(); renderChips(); renderToolsVisibility(); renderTable(); renderLegend(); renderOrphans();
