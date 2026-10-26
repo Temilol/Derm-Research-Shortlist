@@ -103,7 +103,11 @@ a { color: var(--accent); text-underline-offset: 2px; }
 /* header */
 .top { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; justify-content: space-between; }
 .brand { min-width: 0; flex: 1 1 360px; }
-.brand h1 { margin: 0; font: 600 28px/1.15 var(--font-display); letter-spacing: -0.01em; text-wrap: balance; }
+.brand h1 { margin: 0; font: 600 28px/1.15 var(--font-display); letter-spacing: -0.01em; text-wrap: balance; display: flex; align-items: center; gap: 10px; }
+.logo { width: 1.1em; height: 1.1em; flex: none; }
+.logo-tile { fill: var(--accent); }
+.logo-mark { fill: var(--accent-ink); stroke: var(--accent-ink); }
+.logo-mark rect { stroke: none; }
 .sub { margin: 6px 0 0; color: var(--ink-2); max-width: 78ch; }
 .sub b { color: var(--ink); font-weight: 600; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }

@@ -1,4 +1,4 @@
-# Derm Research Shortlist
+# <img src="logo.svg" width="32" height="32" alt="" align="top"> Derm Research Shortlist
 
 Live site: https://derm-research-shortlist.onrender.com
 
