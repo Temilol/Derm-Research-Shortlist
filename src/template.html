@@ -27,11 +27,15 @@
 
   <section class="panel" id="settingsPanel" hidden aria-label="Profile settings">
     <h2>Your profile</h2>
-    <p class="hint">Changes re-run the filter instantly. Saved in this browser only.</p>
+    <p class="hint">Changes re-run the filter instantly.</p>
     <div class="fields" id="settingsFields"></div>
     <div class="field" style="margin-top:14px">
       <span class="lbl">East Coast states (ranked first)</span>
       <div class="states" id="stateChips"></div>
+    </div>
+    <div class="field sync-sec">
+      <span class="lbl">Sync across devices</span>
+      <div class="sync-box" id="syncBox"></div>
     </div>
     <div class="row-actions">
       <button class="btn small" id="resetProfile" type="button">Reset to defaults</button>
@@ -62,7 +66,7 @@
       </li>
     </ol>
   </section>
-  <p class="empty-foot" id="emptyFoot" hidden>Moving from another device? <button class="link-btn" id="emptyBackup" type="button">Backup &amp; restore</button></p>
+  <p class="empty-foot" id="emptyFoot" hidden></p>
 
   <div class="notice info orphan-bar" id="orphanBar" hidden><span id="orphanText"></span> <button class="btn small" id="orphanBtn" type="button">Review</button></div>
 
@@ -98,6 +102,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 /*ENGINE*/
+</script>
+<script>
+/*SYNC*/
 </script>
 <script>
 /*APP*/

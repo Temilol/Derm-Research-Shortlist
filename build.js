@@ -6,6 +6,7 @@ const read = (p) => fs.readFileSync(path.join(__dirname, p), "utf8");
 let t = read("src/template.html")
   .replace("/*STYLE*/", () => read("src/style.css"))
   .replace("/*ENGINE*/", () => read("src/engine.js"))
+  .replace("/*SYNC*/", () => read("src/sync.js"))
   .replace("/*APP*/", () => read("src/app.js"));
 const cut = t.indexOf("</style>") + "</style>".length;
 const head = t.slice(0, cut), body = t.slice(cut);

@@ -15,12 +15,16 @@ the previous file you loaded.
 ## Where your data lives
 
 Your profile settings, tracker statuses and notes, the last file you loaded, and the change history are
-stored in this browser only. Use **Backup & restore** to save them to a file or move them to another
-device. The page loads the SheetJS library from cdnjs.cloudflare.com to read .xlsx files; CSV uploads work
-without it.
+stored in this browser. To use the same data on several devices, open **Profile settings** and sign in
+under **Sync across devices**: your profile, statuses, notes and decisions then sync through Firebase,
+and the spreadsheet stays on each device. Without an account, use **Backup & restore** to save your data
+to a file or move it to another device. The page loads the SheetJS library from cdnjs.cloudflare.com to
+read .xlsx files (CSV uploads work without it), and the Firebase library from gstatic.com only if you sign in.
 
 ## Changing the page
 
-`src/` holds the page source (engine.js is the filtering logic, app.js the interface, style.css the look).
+`src/` holds the page source (engine.js is the filtering logic, sync.js the cross-device sync, app.js the
+interface, style.css the look). `firestore.rules` holds the Firebase security rules. Run the tests with
+`node --test tests/*.test.js`.
 Push changes to `main`; Render runs `node build.js` to rebuild `public/index.html` and redeploys in a
 minute or two. Don't edit `public/index.html` directly; the build overwrites it.

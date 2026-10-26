@@ -4,7 +4,7 @@
 
 ## What this is
 
-A single-page website that reads the crowdsourced dermatology research-fellowship Google Sheet (an .xlsx or .csv export) and sorts every program into Shortlist, Needs verification and Excluded, ordered by deadline urgency, then pay, then location. It runs entirely in the browser. There is no server, no account and no AI needed to use it.
+A single-page website that reads the crowdsourced dermatology research-fellowship Google Sheet (an .xlsx or .csv export) and sorts every program into Shortlist, Needs verification and Excluded, ordered by deadline urgency, then pay, then location. It runs entirely in the browser. There is no server of our own and no AI needed to use it. An account is optional: signing in syncs your data across devices through Firebase.
 
 ## Using it
 
@@ -12,7 +12,7 @@ A single-page website that reads the crowdsourced dermatology research-fellowshi
 2. Open Profile settings first and enter your own facts: Step 3 status, the date you are available from, citizenship, and your preferred states. The defaults belong to the original user.
 3. Read the Shortlist. Work Needs verification by moving each program to Shortlist or Excluded. Track progress with the Status column and notes.
 4. Upload a fresh export weekly. Your statuses, notes and decisions carry over because they are saved by program. The What changed tab lists new, changed and removed programs.
-5. Saved data lives only in your own browser. Use Backup & restore to download a backup before clearing browser data or switching devices.
+5. Saved data lives in your browser. To use more than one device, sign in to sync (Profile settings, Sync across devices). Without an account, use Backup & restore to move data or keep a copy before clearing browser data.
 
 ## Rules in brief (the decisions behind the design)
 
@@ -23,7 +23,18 @@ A single-page website that reads the crowdsourced dermatology research-fellowshi
 
 ## Changing the tool
 
-Everything is in `src/` (engine.js holds the rules, app.js the interface, style.css, template.html). Run `node build.js` to regenerate `public/index.html`, which is the page Render serves. There are no automated tests yet. If you use an AI assistant to make changes, give it this file, README.md and the `src` folder, and tell it: keep it a single static page with no server, never filter on missing data, and keep statuses and notes stored by program ID in localStorage.
+Everything is in `src/` (engine.js holds the rules, sync.js the cross-device sync, app.js the interface, style.css, template.html). Run `node build.js` to regenerate `public/index.html`, which is the page Render serves. Run `node --test tests/*.test.js` for the tests; they cover the sync merge rules, not the eligibility engine yet. If you use an AI assistant to make changes, give it this file, README.md and the `src` folder, and tell it: keep it a single static page with no server of its own, never filter on missing data, and keep statuses and notes stored by program ID in localStorage.
+
+## Sync across devices
+
+Optional email and password sign-in through Firebase (project `derm-research-shortlist`; Authentication and Firestore). The Firebase SDK loads only after someone signs in, so the page stays light for everyone else.
+
+- localStorage stays the working copy on each device. Firestore holds `users/{uid}` (profile) and `users/{uid}/tracker/{programId}` (status, notes, decision). The spreadsheet, the What changed snapshot and column choices stay on each device.
+- Merging is field by field and the newer edit wins. Every status, note, decision and profile setting stores when it last changed. On a tie the account wins, so a fresh device never overwrites real settings. A note edited on two devices keeps both versions. A clear is an edit and syncs; entries are never deleted while syncing.
+- Signing out removes the synced data from that browser; it stays in the account. Deleting the account removes the account and its Firestore data and leaves the browser's own copy.
+- Access control is `firestore.rules`: each person can read and write only their own records. Paste it into Firebase console, Firestore Database, Rules, and Publish after any change. The web config in app.js is public by design.
+- The Firebase project holds users' email addresses. Free plan limits apply (Firestore reads and writes per day, sign-in emails per day).
+- Firebase's authorized domains must include the live domain (and `localhost` for local testing).
 
 ## Instruction files
 

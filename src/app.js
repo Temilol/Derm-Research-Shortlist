@@ -17,7 +17,11 @@
     getJSON(k) { try { const v = this.get(k); return v ? JSON.parse(v) : null; } catch (e) { return null; } },
     setJSON(k, v) { return this.set(k, JSON.stringify(v)); },
   };
-  const K = { profile: "drs.profile.v1", tracker: "drs.tracker.v1", dataset: "drs.dataset.v1", snapshot: "drs.snapshot.v1", cols: "drs.cols.v1" };
+  const K = { profile: "drs.profile.v1", profileAt: "drs.profileAt.v1", tracker: "drs.tracker.v1", dataset: "drs.dataset.v1", snapshot: "drs.snapshot.v1", cols: "drs.cols.v1", sync: "drs.sync.v1" };
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  // Sync state. state: off | connecting | syncing | synced | offline | error | signedOut.
+  const SY = { user: null, state: "off", ready: false, remote: {}, remoteProfile: null, unsub: [], authUnsub: null, dirty: new Set(), profileDirty: false,
+    timer: null, retry: null, justSignedIn: false, signingOut: false, errorSince: null, errorMsg: "", dismissed: "", deferRender: false };
 
   // ---------------------------------------------------------------- constants
   // The crowdsourced fellowship sheet. Empty until the real link is known; the first-run steps then show no link.
@@ -54,12 +58,19 @@
   }
   function setTrack(id, patch) {
     const r = S.byId && S.byId[id];
-    const next = Object.assign({ status: "", notes: "" }, S.tracker[id], patch);
+    const prev = S.tracker[id] || {};
+    const next = Object.assign({ status: "", notes: "" }, prev, patch);
+    // Each part remembers when it last changed, so sync can let the newer edit win.
+    const now = Date.now();
+    for (const f of ["status", "notes", "decision"]) if (f in patch && (patch[f] || "") !== (prev[f] || "")) next[f + "At"] = now;
     if (r) { next.name = r.program; next.state = r.state; }
-    if (!next.decision) { delete next.decision; delete next.decidedOn; delete next.textHash; }
-    if (!next.status && !next.notes && !next.decision) delete S.tracker[id]; else S.tracker[id] = next;
+    if (!next.decision) { next.decision = ""; delete next.decidedOn; delete next.textHash; }
+    // A cleared entry keeps its change times so the clear itself can sync.
+    if (!next.status && !next.notes && !next.decision && !next.statusAt && !next.notesAt && !next.decisionAt) delete S.tracker[id]; else S.tracker[id] = next;
     store.setJSON(K.tracker, S.tracker);
+    queueSync(id);
   }
+  const CLEARED = { status: "", notes: "", decision: "" };
   const textHashOf = (r) => E.fnv([r.requirements, r.description, r.notes].join("\u0001"));
 
   // Column definitions. text() feeds filters and search; sort() feeds sorting.
@@ -105,7 +116,9 @@
     dataset: null, sheets: null, records: [], prepared: null, changes: null, changesMeta: null,
     tab: "shortlist", filters: {}, global: "", sort: {}, tierFilter: null, quick: { paid: false, east: false, hideNI: false },
     cols: Object.assign({}, DEFAULT_COLS, store.getJSON(K.cols) || {}), expanded: new Set(),
+    profileAt: store.getJSON(K.profileAt) || {},
   };
+  S.profileSaved = clone(S.profile);
 
   function todayUTC() {
     if (S.asOf) return E.parseISO(S.asOf);
@@ -142,17 +155,31 @@
     renderSaveBar();
   }
   function saveOk(k) { if (saveFail.keys.delete(k)) renderSaveBar(); }
+  // The bar shows one problem at a time: a failed browser save first, then sync trouble.
+  let barAction = null, barSource = "";
+  const clock = (d) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   function renderSaveBar() {
     const bar = $("#saveBar");
     if (!bar) return;
     const keys = saveFail.keys;
-    if (!keys.size || saveFail.dismissed) { bar.hidden = true; return; }
-    const time = saveFail.since.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    let msg;
-    if (saveFail.kind === "blocked") msg = "This browser isn’t allowing the page to save, which can happen in private browsing. Your changes will be lost when you close this tab. Download a backup before you leave.";
-    else if (keys.size === 1 && keys.has(K.dataset)) msg = "Your browser’s storage is full, so the spreadsheet you loaded isn’t saved. Your statuses and notes are saved; after a reload, upload the file again.";
-    else msg = `Your browser’s storage is full, so changes since ${time} aren’t saved. Download a backup now so you don’t lose them.`;
+    let msg = "", kind = "err", action = ["Download backup", downloadBackup];
+    if (keys.size && !saveFail.dismissed) {
+      barSource = "storage";
+      if (saveFail.kind === "blocked") msg = "This browser isn’t allowing the page to save, which can happen in private browsing. Your changes will be lost when you close this tab. Download a backup before you leave.";
+      else if (keys.size === 1 && keys.has(K.dataset)) msg = "Your browser’s storage is full, so the spreadsheet you loaded isn’t saved. Your statuses and notes are saved; after a reload, upload the file again.";
+      else msg = `Your browser’s storage is full, so changes since ${clock(saveFail.since)} aren’t saved. Download a backup now so you don’t lose them.`;
+    } else if (SY.user && SY.dismissed !== SY.state) {
+      barSource = "sync";
+      if (SY.state === "offline") { kind = "info"; action = null; msg = "You’re offline. Changes are saved in this browser and will sync when you reconnect."; }
+      else if (SY.state === "signedOut") { action = ["Sign in", openSignIn]; msg = `You’ve been signed out of ${SY.user.email}, so changes aren’t syncing. They’re saved in this browser until you sign in again.`; }
+      else if (SY.state === "error") msg = `Sync stopped at ${clock(SY.errorSince)}. ${SY.errorMsg} Changes since then are saved in this browser only; it keeps retrying.`;
+    }
+    if (!msg) { bar.hidden = true; return; }
+    bar.className = `notice ${kind} save-bar`;
     $("#saveText").textContent = msg;
+    const b = $("#saveBackup");
+    b.hidden = !action; barAction = action && action[1];
+    if (action) b.textContent = action[0];
     bar.hidden = false;
   }
   function copyText(text, okMsg, fallbackEl) {
@@ -454,8 +481,8 @@
     const notes = [cur.notes, o.notes].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).join("\n\n");
     const merged = { status: cur.status || o.status || "", notes, decision: cur.decision || o.decision || "" };
     if (merged.decision) { merged.decidedOn = cur.decision ? cur.decidedOn : o.decidedOn; merged.textHash = cur.decision ? cur.textHash : o.textHash; }
-    delete S.tracker[id];
     setTrack(to, merged);
+    setTrack(id, CLEARED);
   }
 
   function renderToolsVisibility() {
@@ -655,7 +682,15 @@
     $("#s-citizen").checked = !!p.us_citizen; $("#s-two").checked = !!p.two_year_ok; $("#s-remote").checked = !!p.remote_bonus;
     $("#stateChips").innerHTML = ALL_STATES.map((st) => `<button type="button" data-state="${st}" aria-pressed="${p.east_coast_states.includes(st)}">${st}</button>`).join("");
   }
-  function saveProfile() { store.setJSON(K.profile, S.profile); if (S.dataset) recompute(); else renderEmpty(); }
+  function saveProfile() {
+    // Stamp each setting that changed, so sync can merge the profile one setting at a time.
+    const now = Date.now();
+    for (const k of Object.keys(S.profile)) if (JSON.stringify(S.profile[k]) !== JSON.stringify(S.profileSaved[k])) S.profileAt[k] = now;
+    S.profileSaved = clone(S.profile);
+    store.setJSON(K.profile, S.profile); store.setJSON(K.profileAt, S.profileAt);
+    queueSync();
+    if (S.dataset) recompute(); else renderEmpty();
+  }
 
   // ---------------------------------------------------------------- modal
   function openModal(title, html) {
@@ -709,8 +744,8 @@
       try {
         const d = JSON.parse(text);
         if (d.app !== "derm-research-shortlist") throw new Error("This is not a backup from this tool.");
-        if (d.profile) { S.profile = Object.assign({}, E.DEFAULT_PROFILE, d.profile); store.setJSON(K.profile, S.profile); }
-        if (d.tracker) { S.tracker = d.tracker; migrateTracker(S.tracker); store.setJSON(K.tracker, S.tracker); }
+        if (d.profile) { S.profile = Object.assign({}, E.DEFAULT_PROFILE, d.profile); saveProfile(); }
+        if (d.tracker) { S.tracker = d.tracker; migrateTracker(S.tracker); store.setJSON(K.tracker, S.tracker); Object.keys(S.tracker).forEach(queueSync); }
         if (d.snapshot) store.setJSON(K.snapshot, d.snapshot);
         if (d.dataset) setDataset(d.dataset, { persist: true }); else if (S.dataset) recompute();
         renderSettings(); closeModal(); toast("Backup restored");
@@ -731,13 +766,27 @@
     $("#closeSettings").onclick = () => { $("#settingsPanel").hidden = true; $("#settingsBtn").setAttribute("aria-expanded", "false"); };
     $("#resetProfile").onclick = () => { S.profile = Object.assign({}, E.DEFAULT_PROFILE, { east_coast_states: E.EAST.slice() }); S.asOf = ""; renderSettings(); saveProfile(); toast("Profile reset"); };
     $("#backupBtn").onclick = openBackup;
-    $("#emptyBackup").onclick = openBackup;
     $("#emptyProfile").onclick = () => {
       const p = $("#settingsPanel"); p.hidden = false; $("#settingsBtn").setAttribute("aria-expanded", "true");
       p.scrollIntoView({ block: "start" }); $("#s-step3").focus({ preventScroll: true });
     };
-    $("#saveBackup").onclick = downloadBackup;
-    $("#saveDismiss").onclick = () => { saveFail.dismissed = true; renderSaveBar(); };
+    $("#saveBackup").onclick = () => barAction && barAction();
+    $("#saveDismiss").onclick = () => { if (barSource === "storage") saveFail.dismissed = true; else SY.dismissed = SY.state; renderSaveBar(); };
+    document.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-sync]"); if (!b) return;
+      ({ signin: openSignIn, signout: openSignOut, delete: openDeleteAccount, backup: openBackup })[b.dataset.sync]();
+    });
+    $("#tbl").addEventListener("focusout", () => setTimeout(() => {
+      if (SY.deferRender && !$("#tbl").contains(document.activeElement)) { SY.deferRender = false; refreshTrackerViews(); }
+    }, 0));
+    window.addEventListener("offline", () => { if (SY.user && SY.state !== "signedOut") setSync("offline"); });
+    window.addEventListener("online", () => {
+      if (!SY.user || SY.state === "signedOut") return;
+      const stalled = !SY.ready || SY.state === "error";
+      setSync("syncing");
+      if (stalled) resumeSync(); else settle();
+    });
+    window.addEventListener("pagehide", flushSync);
     $("#mClose").onclick = closeModal;
     $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeModal(); $("#colsPop").hidden = true; } });
@@ -788,7 +837,7 @@
       } else if (e.target.closest("[data-orph-del]")) {
         const b = e.target.closest("[data-orph-del]");
         if (!b.dataset.armed) { b.dataset.armed = "1"; b.textContent = "Click again to delete"; return; }
-        delete S.tracker[id]; store.setJSON(K.tracker, S.tracker); renderOrphans(); openOrphans(); toast("Deleted");
+        setTrack(id, CLEARED); renderOrphans(); openOrphans(); toast("Deleted");
       }
     });
     $("#statusChips").addEventListener("click", (e) => {
@@ -855,15 +904,278 @@
     $("#colsPop").innerHTML = COLS.filter((c) => colAllowed(c, S.tab)).map((c) => `<label><input type="checkbox" data-col="${c.key}" ${list.includes(c.key) ? "checked" : ""} ${c.key === "program" || c.key === "decide" ? "disabled" : ""}> ${esc(c.label)}</label>`).join("");
   }
 
+  // ---------------------------------------------------------------- sync (optional; Firebase loads only once someone signs in)
+  // localStorage stays the working copy on each device. Firestore is where devices meet; F.mergeEntry and F.mergeProfile decide who wins.
+  // The config is public by design: what protects each person's data is firestore.rules.
+  const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyC4DBbrELVjwOpXsfmcywAIov0QwnQkCd0",
+    authDomain: "derm-research-shortlist.firebaseapp.com",
+    projectId: "derm-research-shortlist",
+    storageBucket: "derm-research-shortlist.firebasestorage.app",
+    messagingSenderId: "12914943500",
+    appId: "1:12914943500:web:f7e0b6bcda8cd3685df029",
+  };
+  const F = window.FSync;
+  const hasContent = (t) => !!(t && (t.status || t.notes || t.decision));
+
+  function setSync(state, err) {
+    if (state === "error") {
+      if (SY.state !== "error") SY.errorSince = new Date();
+      SY.errorMsg = err ? F.message(err) : "";
+      clearTimeout(SY.retry);
+      SY.retry = setTimeout(() => { if (SY.user && SY.state === "error") resumeSync(); }, 30000);
+    }
+    if (state !== SY.state) SY.dismissed = "";
+    SY.state = state;
+    renderSyncBox(); renderSaveBar();
+  }
+  function connectSync() {
+    if (SY.state === "off") setSync("connecting");
+    return F.load(FIREBASE_CONFIG)
+      .then(() => { if (!SY.authUnsub) SY.authUnsub = F.onAuth(onAuthChange); })
+      .catch((e) => { setSync(SY.user ? "error" : "off", e); throw e; });
+  }
+  function resumeSync() { if (SY.authUnsub) subscribe(); else connectSync().catch(() => { /* shown in the bar */ }); }
+  function onAuthChange(user) {
+    if (user) {
+      if (SY.ready && SY.user && SY.user.uid === user.uid) return;
+      SY.user = { uid: user.uid, email: user.email };
+      store.setJSON(K.sync, SY.user);
+      subscribe();
+      return;
+    }
+    stopWatching();
+    const saved = store.getJSON(K.sync);
+    if (SY.signingOut || !saved) { SY.user = null; setSync("off"); }
+    else { SY.user = saved; setSync("signedOut"); }
+  }
+  function stopWatching() {
+    SY.unsub.forEach((u) => { try { u(); } catch (e) { /* already stopped */ } });
+    SY.unsub = []; SY.ready = false;
+  }
+  // Nothing merges until both the tracker and the profile have come from the server, never from an empty cache.
+  function subscribe() {
+    stopWatching();
+    SY.remote = {}; SY.remoteProfile = null;
+    let trackerIn = false, profileIn = false;
+    const uid = SY.user.uid;
+    setSync(navigator.onLine === false ? "offline" : "syncing");
+    const maybeReady = () => { if (trackerIn && profileIn && !SY.ready) firstReconcile(); };
+    SY.unsub.push(F.watchTracker(uid, (snap) => {
+      if (snap.metadata.fromCache && !trackerIn) return;
+      const ids = [];
+      // Entries are never deleted while syncing (a clear is an edit), so a removal means the account is being deleted elsewhere: don't write it back.
+      snap.docChanges().forEach((c) => {
+        if (c.type === "removed") delete SY.remote[c.doc.id];
+        else { ids.push(c.doc.id); SY.remote[c.doc.id] = c.doc.data(); }
+      });
+      if (!trackerIn) { trackerIn = true; maybeReady(); } else if (SY.ready) reconcileTracker(ids);
+    }, onSyncError));
+    SY.unsub.push(F.watchProfile(uid, (snap) => {
+      if (snap.metadata.fromCache && !profileIn) return;
+      if (profileIn && !snap.exists && !snap.metadata.hasPendingWrites) { stopWatching(); setSync("signedOut"); return; }
+      SY.remoteProfile = snap.exists ? snap.data() : null;
+      if (!profileIn) { profileIn = true; maybeReady(); } else if (SY.ready) reconcileProfile();
+    }, onSyncError));
+  }
+  function firstReconcile() {
+    SY.ready = true;
+    const c = reconcileTracker([...new Set([...Object.keys(S.tracker), ...Object.keys(SY.remote)])]);
+    reconcileProfile();
+    settle();
+    if (!SY.justSignedIn) return;
+    SY.justSignedIn = false;
+    const parts = [c.added && `added ${c.added} from this device`, c.updated && `updated ${c.updated}`, c.pulled && `brought in ${c.pulled} from your account`].filter(Boolean);
+    const both = c.conflicts ? ` ${c.conflicts} note${c.conflicts === 1 ? " was" : "s were"} edited on both devices; both versions are kept.` : "";
+    toast(parts.length ? `Synced: ${parts.join(", ")}.${both}` : "Synced. Everything already matched.");
+  }
+  function reconcileTracker(ids) {
+    const writes = {}, c = { added: 0, updated: 0, pulled: 0, conflicts: 0 };
+    const now = Date.now();
+    let changed = false;
+    for (const id of ids) {
+      const local = S.tracker[id], remote = SY.remote[id];
+      if (!id || (!local && !remote)) continue;
+      const m = F.mergeEntry(local, remote, !!remote, now);
+      if (!local && !hasContent(m.local)) continue;
+      S.tracker[id] = m.local;
+      if (m.localChanged) { changed = true; c.pulled++; }
+      if (m.remoteChanged && (remote || hasContent(m.local))) { writes[id] = m.remote; if (remote) c.updated++; else c.added++; }
+      if (m.conflict) c.conflicts++;
+    }
+    store.setJSON(K.tracker, S.tracker);
+    if (changed) refreshTrackerViews();
+    pushTracker(writes);
+    return c;
+  }
+  function reconcileProfile() {
+    const r = SY.remoteProfile;
+    const m = F.mergeProfile(S.profile, S.profileAt, (r && r.profile) || {}, (r && r.profileAt) || {}, !!r);
+    if (m.localChanged) {
+      S.profile = Object.assign({}, E.DEFAULT_PROFILE, m.profile); S.profileAt = m.profileAt; S.profileSaved = clone(S.profile);
+      store.setJSON(K.profile, S.profile); store.setJSON(K.profileAt, S.profileAt);
+      renderSettings();
+      if (S.dataset) recompute(); else renderEmpty();
+    }
+    if (m.remoteChanged) { markSyncing(); F.writeProfile(SY.user.uid, { profile: m.profile, profileAt: m.profileAt }).then(settle, onSyncError); }
+  }
+  function pushTracker(writes) {
+    if (!SY.user || !Object.keys(writes).length) return;
+    markSyncing();
+    F.writeTracker(SY.user.uid, writes).then(settle, onSyncError);
+  }
+  function markSyncing() { if (SY.state !== "offline") setSync("syncing"); }
+  function settle() {
+    F.waitForPendingWrites().then(() => { if (SY.user && SY.ready && SY.state !== "signedOut" && navigator.onLine !== false) setSync("synced"); });
+  }
+  function onSyncError(e) {
+    if (e && e.code === "unavailable") setSync("offline"); else setSync("error", e);
+  }
+  // Local edits wait a moment so typing a note sends one write, not one per key.
+  function queueSync(id) {
+    if (!SY.ready) return;
+    if (id) SY.dirty.add(id); else SY.profileDirty = true;
+    clearTimeout(SY.timer);
+    SY.timer = setTimeout(flushSync, 1200);
+  }
+  function flushSync() {
+    clearTimeout(SY.timer);
+    if (!SY.ready) return;
+    const ids = [...SY.dirty]; SY.dirty.clear();
+    if (ids.length) reconcileTracker(ids);
+    if (SY.profileDirty) { SY.profileDirty = false; reconcileProfile(); }
+  }
+  // A remote change never redraws the table under someone's cursor; it waits until they leave the field.
+  function refreshTrackerViews() {
+    if (!S.dataset) return;
+    const a = document.activeElement;
+    if (a && $("#tbl").contains(a) && /^(TEXTAREA|INPUT|SELECT)$/.test(a.tagName)) { SY.deferRender = true; return; }
+    applyDecisions(); renderTabs(); renderStatusChips(); renderOrphans(); renderBody(); refreshFilterOptions();
+  }
+
+  const SYNC_LABEL = { connecting: "Connecting…", syncing: "Syncing…", synced: "Synced", offline: "Offline · changes sync when you reconnect", error: "Sync problem · retrying", signedOut: "Signed out" };
+  function renderSyncBox() {
+    const box = $("#syncBox"), foot = $("#emptyFoot");
+    const on = SY.user && SY.state !== "off";
+    if (SY.state === "signedOut") {
+      box.innerHTML = `<p>Sync is paused: you were signed out of <b>${esc(SY.user.email)}</b>. Changes are saved in this browser until you sign in again.</p>
+        <div class="row-actions"><button class="btn small primary" type="button" data-sync="signin">Sign in again</button><button class="btn small" type="button" data-sync="signout">Sign out</button></div>`;
+    } else if (on) {
+      box.innerHTML = `<p>Synced as <b>${esc(SY.user.email)}</b> · <span class="sync-state s-${SY.state}">${SYNC_LABEL[SY.state]}</span></p>
+        <div class="row-actions"><button class="btn small" type="button" data-sync="signout">Sign out</button><button class="btn small" type="button" data-sync="delete">Delete account</button></div>`;
+    } else {
+      box.innerHTML = `<p class="hint">Optional. Sign in to keep your profile, statuses, notes and decisions the same on every device. Without it, everything stays in this browser.</p>
+        <div class="row-actions"><button class="btn small primary" type="button" data-sync="signin"${SY.state === "connecting" ? " disabled" : ""}>Sign in or create account</button></div>`;
+    }
+    foot.innerHTML = on
+      ? `Synced as ${esc(SY.user.email)}. <button class="link-btn" type="button" data-sync="backup">Backup &amp; restore</button>`
+      : `Moving from another device? <button class="link-btn" type="button" data-sync="signin">Sign in to sync</button> or use <button class="link-btn" type="button" data-sync="backup">Backup &amp; restore</button>`;
+  }
+
+  function openSignIn() {
+    const email = (SY.user && SY.user.email) || "";
+    openModal("Sign in to sync", `<p class="hint" style="margin:0">Keeps your profile, statuses, notes and decisions the same on every device. The spreadsheet stays on each device, so upload it on each one.</p>
+      <form class="auth-form" id="authForm" novalidate>
+        <label class="field"><span class="lbl">Email</span><input type="email" id="authEmail" autocomplete="username" value="${esc(email)}"></label>
+        <label class="field"><span class="lbl">Password</span><input type="password" id="authPw" autocomplete="current-password"></label>
+        <p class="auth-msg" id="authMsg" role="alert" hidden></p>
+        <div class="row-actions" style="margin:0"><button class="btn primary" type="submit">Sign in</button><button class="btn" type="button" data-auth="up">Create account</button><button class="link-btn" type="button" data-auth="reset">Forgot password?</button></div>
+      </form>`);
+    $("#authForm").onsubmit = (e) => { e.preventDefault(); authAction("in"); };
+    $("#authForm").querySelectorAll("[data-auth]").forEach((b) => { b.onclick = () => authAction(b.dataset.auth); });
+    connectSync().catch((e) => authMsg(F.message(e)));
+    setTimeout(() => $(email ? "#authPw" : "#authEmail").focus(), 0);
+  }
+  function authMsg(text, ok) { const p = $("#authMsg"); if (!p) return; p.textContent = text; p.hidden = !text; p.classList.toggle("ok", !!ok); }
+  async function authAction(kind) {
+    const email = $("#authEmail").value.trim(), pw = $("#authPw").value;
+    if (!email) return authMsg("Enter your email.");
+    if (kind !== "reset" && !pw) return authMsg("Enter your password.");
+    const btns = [...$("#authForm").querySelectorAll("button")];
+    btns.forEach((b) => { b.disabled = true; }); authMsg("");
+    try {
+      await connectSync();
+      if (kind === "reset") {
+        await F.resetPassword(email);
+        authMsg("If an account exists for that email, a reset link is on its way. Check your spam folder too.", true);
+      } else {
+        SY.justSignedIn = true;
+        await (kind === "up" ? F.signUp(email, pw) : F.signIn(email, pw));
+        closeModal(); toast(kind === "up" ? "Account created. Syncing…" : "Signed in. Syncing…");
+      }
+    } catch (e) { SY.justSignedIn = false; authMsg(F.message(e)); }
+    btns.forEach((b) => { b.disabled = false; });
+  }
+
+  function openSignOut() {
+    openModal("Sign out", `<p style="margin:0">Sign out of <b>${esc(SY.user.email)}</b> on this device?</p>
+      <p class="hint" style="margin:0">Your profile, statuses, notes and decisions are removed from this browser. They stay in your account and come back when you sign in again. The loaded spreadsheet stays.</p>
+      <p class="auth-msg" id="soMsg" role="alert" hidden></p>
+      <div class="row-actions" style="margin:0"><button class="btn primary" id="soYes" type="button">Sign out</button></div>`);
+    $("#soYes").onclick = async () => {
+      const b = $("#soYes");
+      if (SY.state === "signedOut" || b.dataset.force) return finishSignOut();
+      b.disabled = true; b.textContent = "Finishing sync…";
+      flushSync();
+      const done = await Promise.race([F.waitForPendingWrites().then(() => true, () => false), new Promise((r) => setTimeout(() => r(false), 6000))]);
+      if (done && SY.state !== "error") return finishSignOut();
+      const p = $("#soMsg");
+      if (!p) return;
+      p.textContent = "Some changes haven’t reached your account yet, so signing out now would lose them. Reconnect and try again, or download a backup first.";
+      p.hidden = false; b.disabled = false; b.textContent = "Sign out anyway"; b.dataset.force = "1";
+    };
+  }
+  async function finishSignOut() {
+    SY.signingOut = true;
+    stopWatching();
+    try { await F.signOut(); } catch (e) { /* sync service never loaded */ }
+    [K.sync, K.tracker, K.profile, K.profileAt].forEach((k) => store.remove(k));
+    S.tracker = {}; S.profile = Object.assign({}, E.DEFAULT_PROFILE, { east_coast_states: E.EAST.slice() }); S.profileAt = {}; S.profileSaved = clone(S.profile);
+    SY.user = null; SY.remote = {}; SY.remoteProfile = null; SY.signingOut = false;
+    setSync("off"); renderSettings(); closeModal();
+    if (S.dataset) recompute(); else renderAll();
+    toast("Signed out. Your data is safe in your account.");
+  }
+
+  function openDeleteAccount() {
+    openModal("Delete account", `<p style="margin:0">This permanently deletes <b>${esc(SY.user.email)}</b> and everything synced to it. It can’t be undone.</p>
+      <p class="hint" style="margin:0">This browser keeps its own copy of your profile, statuses and notes, as if you had never signed in.</p>
+      <label class="field"><span class="lbl">Password</span><input type="password" id="delPw" autocomplete="current-password"></label>
+      <p class="auth-msg" id="delMsg" role="alert" hidden></p>
+      <div class="row-actions" style="margin:0"><button class="btn danger" id="delYes" type="button">Delete account</button></div>`);
+    setTimeout(() => $("#delPw").focus(), 0);
+    $("#delYes").onclick = async () => {
+      const pw = $("#delPw").value, p = $("#delMsg"), b = $("#delYes");
+      if (!pw) { p.textContent = "Enter your password to confirm."; p.hidden = false; return; }
+      b.disabled = true; b.textContent = "Deleting…";
+      SY.signingOut = true; stopWatching();
+      try {
+        await F.deleteAccount(SY.user.email, pw);
+        store.remove(K.sync);
+        for (const t of Object.values(S.tracker)) delete t.notesSyncedAt;
+        store.setJSON(K.tracker, S.tracker);
+        SY.user = null; SY.remote = {}; SY.remoteProfile = null;
+        setSync("off"); closeModal(); toast("Account deleted. Your data is still in this browser.");
+      } catch (e) {
+        p.textContent = F.message(e); p.hidden = false; b.disabled = false; b.textContent = "Delete account";
+        if (SY.user) subscribe();
+      }
+      SY.signingOut = false;
+    };
+  }
+
   // ---------------------------------------------------------------- start
   function start() {
     if (migrateTracker(S.tracker)) store.setJSON(K.tracker, S.tracker);
     wire(); renderSettings(); buildColsMenu();
+    const saved = store.getJSON(K.sync);
+    if (saved) { SY.user = saved; connectSync().catch(() => { /* shown in the bar */ }); }
+    renderSyncBox();
     const ds = store.getJSON(K.dataset);
     if (ds && ds.rows && ds.sheetName) {
       try { setDataset(ds, { persist: false }); } catch (e) { notice("Could not open the saved file: " + e.message, "err"); renderAll(); }
     } else renderAll();
   }
-  window.__drs ={ S, E, handleFile, setDataset };
+  window.__drs = { S, SY, E, handleFile, setDataset };
   start();
 })();
