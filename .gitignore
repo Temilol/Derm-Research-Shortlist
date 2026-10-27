@@ -1,3 +1,6 @@
 .DS_Store
 preview.html
 node_modules/
+
+# Real-sheet test copy (contains program contacts); see tests/fetch-sheet.js
+tests/fixtures/

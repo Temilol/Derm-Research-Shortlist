@@ -26,6 +26,6 @@ read .xlsx files (CSV uploads work without it), and the Firebase library from gs
 
 `src/` holds the page source (engine.js is the filtering logic, sync.js the cross-device sync, app.js the
 interface, style.css the look). `firestore.rules` holds the Firebase security rules. Run the tests with
-`node --test tests/*.test.js`.
+`node --test tests/*.test.js` (see HANDOFF.md for the real-sheet snapshot).
 Push changes to `main`; Render runs `node build.js` to rebuild `public/index.html` and redeploys in a
 minute or two. Don't edit `public/index.html` directly; the build overwrites it.
