@@ -281,6 +281,8 @@ tr.detail td { padding: 0; background: var(--surface-2); }
 .steps .hint { color: var(--ink-3); font-size: 13px; }
 .profile-line { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; }
 .drop-zone { border: 2px dashed var(--line); border-radius: 8px; padding: 22px 16px; display: flex; flex-direction: column; gap: 12px; align-items: center; text-align: center; }
+.drop-zone .hint { margin: 0; color: var(--ink-3); font-size: 13px; }
+.sub .stale { color: var(--t2); font-weight: 500; }
 .empty-foot { margin: 0; text-align: right; color: var(--ink-3); font-size: 13px; }
 /* application checklist */
 .dgrid .ck { grid-column: 1 / -1; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 12px 14px; }

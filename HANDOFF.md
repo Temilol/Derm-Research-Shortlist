@@ -8,10 +8,10 @@ A single-page website that reads the crowdsourced dermatology research-fellowshi
 
 ## Using it
 
-1. Open the site. In Google Sheets choose File, Download, Microsoft Excel (.xlsx), then drop the file on the page.
+1. Open the site and press Load the latest sheet. The page reads the public Google Sheet directly (its xlsx export). Uploading an .xlsx or .csv still works if Google can't be reached.
 2. Open Profile settings first and enter your own facts: Step 3 status, the date you are available from, citizenship, and your preferred states. The defaults belong to the original user.
 3. Read the Shortlist. Work Needs verification by moving each program to Shortlist or Excluded. Track progress with the Status column, notes and each program's application checklist (open a program's details). Mark shared documents such as your CV once under Profile settings, My documents.
-4. Upload a fresh export weekly. Your statuses, notes and decisions carry over because they are saved by program. The What changed tab lists new, changed and removed programs.
+4. Press Update sheet weekly (the header nudges after 7 days). Your statuses, notes, decisions and checklists carry over because they are saved by program. The What changed tab lists new, changed and removed programs since the previous load.
 5. Saved data lives in your browser. To use more than one device, sign in to sync (Profile settings, Sync across devices). Without an account, use Backup & restore to move data or keep a copy before clearing browser data.
 
 ## Rules in brief (the decisions behind the design)
@@ -23,7 +23,7 @@ A single-page website that reads the crowdsourced dermatology research-fellowshi
 
 ## Changing the tool
 
-Everything is in `src/` (engine.js holds the rules, sync.js the cross-device sync, app.js the interface, style.css, template.html). Run `node build.js` to regenerate `public/index.html`, which is the page Render serves. Run `node --test tests/*.test.js` for the tests; they cover the sync merge rules (including checklists), not the eligibility engine yet. A new field on a tracker entry must also be added to `firestore.rules` and republished, or sync refuses it. If you use an AI assistant to make changes, give it this file, README.md and the `src` folder, and tell it: keep it a single static page with no server of its own, never filter on missing data, and keep statuses and notes stored by program ID in localStorage.
+Everything is in `src/` (engine.js holds the rules, sync.js the cross-device sync, app.js the interface, style.css, template.html). Run `node build.js` to regenerate `public/index.html`, which is the page Render serves. To try it locally, run `python3 -m http.server 8765` in `public/` and open http://localhost:8765/. Opening the file straight from disk breaks Load the latest sheet (Google refuses file:// pages), and any port other than 8765 breaks sign-in (the Firebase key only allows that one). Run `node --test tests/*.test.js` for the tests; they cover the sync merge rules (including checklists), not the eligibility engine yet. A new field on a tracker entry must also be added to `firestore.rules` and republished, or sync refuses it. If you use an AI assistant to make changes, give it this file, README.md and the `src` folder, and tell it: keep it a single static page with no server of its own, never filter on missing data, and keep statuses and notes stored by program ID in localStorage.
 
 ## Application checklist
 

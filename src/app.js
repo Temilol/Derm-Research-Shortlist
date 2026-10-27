@@ -24,8 +24,12 @@
     timer: null, retry: null, justSignedIn: false, signingOut: false, errorSince: null, errorMsg: "", dismissed: "", deferRender: false };
 
   // ---------------------------------------------------------------- constants
-  // The crowdsourced fellowship sheet. Empty until the real link is known; the first-run steps then show no link.
-  const SHEET_URL = "";
+  // The crowdsourced fellowship sheet. It is public and Google lets other sites read its export, so the page loads it directly.
+  const SHEET_ID = "1q6rKR0emDDM6twbyT2L3s7_CmsAz8ks8saRUs8Ryl40";
+  const SHEET_VIEW_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/htmlview`;
+  const SHEET_EXPORT_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=xlsx`;
+  const SHEET_LABEL = "Fellowship sheet (Google)";
+  const STALE_DAYS = 7;
   const STEP3_LABEL = { not_taken: "Step 3 not taken", planned: "Step 3 planned", passed: "Step 3 passed" };
   const TIER_SHORT = { 1: "Due ≤ 30 days", 2: "Due 31–90 days", 3: "Due later", 4: "Rolling", 5: "Passed · projected", 6: "No date" };
   const BUCKET_CLASS = { "Eligible": "b-Eligible", "Likely eligible": "b-Likely", "Needs verification": "b-Needs", "Excluded": "b-Excluded" };
@@ -393,21 +397,58 @@
     renderAll();
   }
 
+  function loadBuffer(buf, label, source) {
+    const sheets = sheetsFromBuffer(buf);
+    const name = E.chooseSheet(sheets);
+    const now = new Date();
+    const ds = { label, sheetName: name, rows: sheets[name], loadedAt: E.iso(new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()))), source, example: false };
+    setDataset(ds, { persist: true });
+    notice("");
+    toast(source === "google" ? `Loaded ${S.records.length} programs from the Google Sheet` : `Analyzed ${S.records.length} programs from "${name}"`);
+    S.tab = "shortlist"; renderAll();
+  }
+  // The spreadsheet library loads in the background; wait for it rather than failing an early upload.
+  function xlsxReady() {
+    return new Promise((resolve, reject) => {
+      let tries = 0;
+      const poll = () => {
+        if (typeof XLSX !== "undefined") return resolve();
+        if (++tries > 150) return reject(new Error("The spreadsheet reader didn’t load. Check your connection, or upload a CSV."));
+        setTimeout(poll, 100);
+      };
+      poll();
+    });
+  }
   async function handleFile(file) {
     if (!file) return;
     notice("Reading " + file.name + "…", "info");
     try {
-      const buf = await file.arrayBuffer();
-      const sheets = sheetsFromBuffer(buf);
-      const name = E.chooseSheet(sheets);
-      const now = new Date();
-      const ds = { label: file.name, sheetName: name, rows: sheets[name], loadedAt: E.iso(new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()))), example: false };
-      setDataset(ds, { persist: true });
-      notice("");
-      toast(`Analyzed ${S.records.length} programs from "${name}"`);
-      S.tab = "shortlist"; renderAll();
+      if (!/\.(csv|txt)$/i.test(file.name)) await xlsxReady().catch(() => { /* sheetsFromBuffer explains */ });
+      loadBuffer(await file.arrayBuffer(), file.name, "file");
     } catch (e) {
       notice("Could not read that file. " + e.message, "err");
+    }
+  }
+  async function loadLatest(url) {
+    const btns = ["#loadBtn", "#emptyLoad"].map((sel) => $(sel));
+    btns.forEach((b) => { b.disabled = true; });
+    notice("Loading the latest sheet from Google…", "info");
+    try {
+      await xlsxReady();
+      let res;
+      try { res = await fetch(url || SHEET_EXPORT_URL, { cache: "no-store" }); } catch (e) {
+        // A private sheet redirects to Google sign-in, which the browser refuses to read, so it looks like a network failure.
+        // A page opened straight from disk (file://) fails here too; HANDOFF explains testing through localhost.
+        throw new Error(navigator.onLine === false ? "You’re offline." : "Couldn’t reach the sheet. It may have been made private or moved, or Google may be blocked on this network.");
+      }
+      if (!res.ok || (res.headers.get("content-type") || "").includes("text/html")) {
+        throw new Error(res.status === 404 ? "The sheet wasn’t found; it may have moved." : "The sheet isn’t publicly viewable right now.");
+      }
+      loadBuffer(await res.arrayBuffer(), SHEET_LABEL, "google");
+    } catch (e) {
+      notice(`${e.message} You can download the sheet yourself and use Upload file instead.`, "err");
+    } finally {
+      btns.forEach((b) => { b.disabled = false; });
     }
   }
 
@@ -491,17 +532,15 @@
     const when = fmtDate(ds.loadedAt);
     const intro = `Analyzing <b>${esc(ds.label)}</b> (${n} programs from “${esc(ds.sheetName)}”, loaded ${when}).`;
     const s = S.profile;
-    $("#sourceLine").innerHTML = `${intro} Filtered for a US ${s.us_citizen ? "citizen" : "applicant"} available ${fmtDate(s.available_from)}, ${STEP3_LABEL[s.step3_status]}. Deadlines are measured from ${fmtDate(E.iso(todayUTC()))}.`;
+    const now = new Date(), age = Math.round((Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - E.parseISO(ds.loadedAt).getTime()) / 86400000);
+    const stale = age >= STALE_DAYS ? ` <span class="stale">Loaded ${age} days ago: press Update sheet for the latest.</span>` : "";
+    $("#sourceLine").innerHTML = `${intro} Filtered for a US ${s.us_citizen ? "citizen" : "applicant"} available ${fmtDate(s.available_from)}, ${STEP3_LABEL[s.step3_status]}. Deadlines are measured from ${fmtDate(E.iso(todayUTC()))}.${stale}`;
   }
 
   function renderEmpty() {
     const p = S.profile, st = p.east_coast_states;
     const states = st.length === 0 ? "no states ranked first" : st.length <= 5 ? `${st.join(", ")} ranked first` : `${st.length} states ranked first`;
     $("#profileSummary").textContent = `Available ${fmtDate(p.available_from)} · ${p.us_citizen ? "US citizen" : "Not a US citizen"} · ${STEP3_LABEL[p.step3_status]} · ${states}`;
-    const dl = "then choose File → Download → Microsoft Excel (.xlsx).";
-    $("#sheetStep").innerHTML = SHEET_URL
-      ? `<a href="${esc(SHEET_URL)}" target="_blank" rel="noopener">Open the fellowship sheet ↗</a>, ${dl}`
-      : `Open the fellowship sheet in Google Sheets, ${dl}`;
   }
 
   function renderTabs() {
@@ -884,6 +923,9 @@
   // ---------------------------------------------------------------- events
   function wire() {
     $("#uploadBtn").onclick = () => $("#fileInput").click();
+    $("#loadBtn").onclick = () => loadLatest();
+    $("#emptyLoad").onclick = () => loadLatest();
+    $("#sheetLink").href = SHEET_VIEW_URL;
     $("#emptyUpload").onclick = () => $("#fileInput").click();
     $("#fileInput").onchange = (e) => { handleFile(e.target.files[0]); e.target.value = ""; };
     $("#settingsBtn").onclick = () => {
@@ -1343,6 +1385,6 @@
       try { setDataset(ds, { persist: false }); } catch (e) { notice("Could not open the saved file: " + e.message, "err"); renderAll(); }
     } else renderAll();
   }
-  window.__drs = { S, SY, E, handleFile, setDataset };
+  window.__drs = { S, SY, E, handleFile, setDataset, loadLatest };
   start();
 })();

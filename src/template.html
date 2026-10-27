@@ -15,7 +15,8 @@
       <p class="sub" id="sourceLine">Loading…</p>
     </div>
     <div class="actions">
-      <button class="btn primary" id="uploadBtn" type="button">Upload spreadsheet</button>
+      <button class="btn primary" id="loadBtn" type="button" title="Load the latest version from the Google Sheet">Update sheet</button>
+      <button class="btn" id="uploadBtn" type="button">Upload file</button>
       <input type="file" id="fileInput" accept=".xlsx,.xls,.csv,.txt,text/csv,text/plain" hidden>
       <button class="btn" id="settingsBtn" type="button" aria-expanded="false" aria-controls="settingsPanel">Profile settings</button>
       <button class="btn" id="backupBtn" type="button">Backup &amp; restore</button>
@@ -59,15 +60,11 @@
       </li>
       <li>
         <span class="num" aria-hidden="true">2</span>
-        <h2>Download the sheet</h2>
-        <p id="sheetStep"></p>
-      </li>
-      <li>
-        <span class="num" aria-hidden="true">3</span>
-        <h2>Drop the file here</h2>
+        <h2>Load the sheet</h2>
         <div class="drop-zone">
-          <p>Drop the .xlsx anywhere on this page, or</p>
-          <button class="btn primary" id="emptyUpload" type="button">Upload spreadsheet</button>
+          <button class="btn primary" id="emptyLoad" type="button">Load the latest sheet</button>
+          <p>Straight from the crowdsourced Google Sheet. <a id="sheetLink" target="_blank" rel="noopener">View it on Google ↗</a></p>
+          <p class="hint">Or drop an .xlsx or .csv anywhere on this page, or <button class="link-btn" id="emptyUpload" type="button">upload a file</button>.</p>
         </div>
         <p class="hint">Analyzed in your browser. Never sent to a server.</p>
       </li>

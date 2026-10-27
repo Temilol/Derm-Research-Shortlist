@@ -8,9 +8,10 @@ filter every column. All processing happens in your browser. Nothing is uploaded
 
 ## Every week
 
-Open the site, drag the newly downloaded spreadsheet onto the page (Google Sheets: **File → Download →
-Microsoft Excel (.xlsx)**). The **What changed** tab shows programs that are new, changed or removed since
-the previous file you loaded.
+Open the site and press **Update sheet**. The page loads the latest version of the crowdsourced Google Sheet
+directly; if Google can't be reached, download the sheet (Google Sheets: **File → Download → Microsoft Excel
+(.xlsx)**) and use **Upload file**. The **What changed** tab shows programs that are new, changed or removed
+since the previous load.
 
 ## Where your data lives
 
